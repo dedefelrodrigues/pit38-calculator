@@ -1,0 +1,10 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "vitest.enable": true,
+  "vitest.commandLine": "pnpm --filter tax-engine test"
+}
