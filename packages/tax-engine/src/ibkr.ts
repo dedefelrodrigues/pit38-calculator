@@ -219,47 +219,85 @@ function parseWithholdingLine(cols: string[]): RawTransaction | null {
 }
 
 // ---------------------------------------------------------------------------
-// Corporate Actions → STOCK_SPLIT
+// Corporate Actions → STOCK_SPLIT / SELL (merger, delisting)
 // ---------------------------------------------------------------------------
-// Header: Asset Category,Currency,Report Date,Date/Time,Description,Quantity,...
+// Header: Asset Category,Currency,Report Date,Date/Time,Description,Quantity,Proceeds,...
 
 const CA_ASSET_CATEGORY = 2;
 const CA_CURRENCY = 3;
 const CA_REPORT_DATE = 4;
 const CA_DESC = 6;
+const CA_QUANTITY = 7;
+const CA_PROCEEDS = 8;
 
 function parseCorporateActionLine(cols: string[]): RawTransaction | null {
   if (cols[CA_ASSET_CATEGORY]?.trim() !== "Stocks") return null;
 
-  // Use Report Date as the effective split date (the trading-day the split takes effect).
+  // Use Report Date as the effective date (the trading-day the action takes effect).
   const date = cols[CA_REPORT_DATE]?.trim();
   if (!date || !isIsoDate(date)) return null;
 
   const description = cols[CA_DESC]?.trim() ?? "";
+  const currency = (cols[CA_CURRENCY]?.trim() || "USD") as Currency;
 
-  // Only process "Split N for M" corporate actions.
+  // ── Stock split ─────────────────────────────────────────────────────────────
   const splitMatch = description.match(
     /Split\s+(\d+(?:\.\d+)?)\s+for\s+(\d+(?:\.\d+)?)/i,
   );
-  if (!splitMatch) return null;
+  if (splitMatch) {
+    const ratio = new Decimal(splitMatch[1]!).div(new Decimal(splitMatch[2]!));
+    const parsed = parseSymbolFromDescription(description);
+    const ZERO = new Decimal(0);
+    return {
+      id: crypto.randomUUID(),
+      broker: "ibkr",
+      date,
+      type: "STOCK_SPLIT",
+      symbol: parsed.symbol,
+      ...(parsed.isin !== undefined && { isin: parsed.isin }),
+      quantity: ratio,
+      currency,
+      grossAmount: ZERO,
+      commission: ZERO,
+      netAmount: ZERO,
+    };
+  }
 
-  const ratio = new Decimal(splitMatch[1]!).div(new Decimal(splitMatch[2]!));
+  // ── Merger / acquisition or delisting → close the position as a SELL ────────
+  // Merger:   "SYMBOL(ISIN) Merged(Acquisition) for USD X per Share (...)"
+  //            Proceeds > 0 (cash received at acquisition price)
+  // Delisted: "(ISIN) Delisted (SYMBOL, Name, ISIN)"
+  //            Proceeds = 0 (shares become worthless)
+  const isMerger = /Merged|Acquisition/i.test(description);
+  const isDelisted = /Delisted/i.test(description);
+  if (!isMerger && !isDelisted) return null;
+
+  const qtyRaw = parseAmount(cols[CA_QUANTITY]?.trim());
+  if (!qtyRaw || qtyRaw.isZero()) return null;
+  const quantity = qtyRaw.abs(); // IBKR reports removed shares as negative
+
+  const proceeds = parseAmount(cols[CA_PROCEEDS]?.trim());
+  const grossAmount = proceeds?.abs() ?? new Decimal(0);
+  const pricePerShare = grossAmount.isZero()
+    ? new Decimal(0)
+    : grossAmount.div(quantity);
+
   const parsed = parseSymbolFromDescription(description);
-  const currency = (cols[CA_CURRENCY]?.trim() || "USD") as Currency;
   const ZERO = new Decimal(0);
 
   return {
     id: crypto.randomUUID(),
     broker: "ibkr",
     date,
-    type: "STOCK_SPLIT",
+    type: "SELL",
     symbol: parsed.symbol,
     ...(parsed.isin !== undefined && { isin: parsed.isin }),
-    quantity: ratio,
+    quantity,
+    ...(pricePerShare.gt(0) && { pricePerShare }),
     currency,
-    grossAmount: ZERO,
+    grossAmount,
     commission: ZERO,
-    netAmount: ZERO,
+    netAmount: grossAmount,
   };
 }
 
@@ -269,14 +307,29 @@ function parseCorporateActionLine(cols: string[]): RawTransaction | null {
 
 /**
  * Extracts symbol and ISIN from IBKR description strings.
- * Pattern: "SYMBOL(ISIN) rest..." e.g. "ABBV(US00287Y1091) Cash Dividend..."
+ *
+ * Handles two formats:
+ *   Standard: "SYMBOL(ISIN) rest..."
+ *     e.g. "ABBV(US00287Y1091) Cash Dividend..."
+ *          "NVDA(US67066G1040) Split 10 for 1..."
+ *          "XM(US7476012015) Merged(Acquisition)..."
+ *
+ *   Delisted: "(ISIN) Delisted (SYMBOL, Name, ISIN)"
+ *     e.g. "(US87663X1028) Delisted (TTCF, TATTOOED CHEF INC, US87663X1028)"
+ *     → ISIN from the first group, symbol from the second group's first field.
  */
 function parseSymbolFromDescription(desc: string): {
   symbol: string;
   isin?: string;
 } {
-  const m = desc.match(/^([A-Z0-9./]+)\(([A-Z0-9]+)\)/);
-  if (m) return { symbol: m[1]!, isin: m[2]! };
+  // Standard: SYMBOL(ISIN) ...
+  const standard = desc.match(/^([A-Z0-9./]+)\(([A-Z0-9]+)\)/);
+  if (standard) return { symbol: standard[1]!, isin: standard[2]! };
+
+  // Delisted: (ISIN) ... (SYMBOL, Name, ...)
+  const delisted = desc.match(/^\(([A-Z0-9]+)\)[^(]*\(([A-Z0-9.]+),/);
+  if (delisted) return { symbol: delisted[2]!, isin: delisted[1]! };
+
   const symbolOnly = desc.match(/^([A-Z0-9./]+)/);
   return { symbol: symbolOnly?.[1] ?? "UNKNOWN" };
 }

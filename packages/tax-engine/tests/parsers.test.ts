@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import Decimal from "decimal.js";
-import { parseDegiroTrades, parseDegiroAccount, parseDegiroDate, splitCsvLine } from "../src/degiro.js";
+import {
+  parseDegiroTrades,
+  parseDegiroAccount,
+  parseDegiroDate,
+  splitCsvLine,
+} from "../src/degiro.js";
 import { parseIbkrActivity, parseIbkrDate } from "../src/ibkr.js";
 
 // ---------------------------------------------------------------------------
@@ -395,6 +400,66 @@ describe("parseIbkrActivity — corporate actions (stock splits)", () => {
   });
 });
 
+describe("parseIbkrActivity — corporate actions (merger / acquisition)", () => {
+  const MERGER_CSV = `Corporate Actions,Header,Asset Category,Currency,Report Date,Date/Time,Description,Quantity,Proceeds,Value,Realized P/L,Code
+Corporate Actions,Data,Stocks,USD,2023-06-29,"2023-06-28, 20:25:00","XM(US7476012015) Merged(Acquisition) for USD 18.15 per Share (XM, QUALTRICS INTERNATIONAL-CL A, US7476012015)",-130,2359.5,-2358.2,-2782.151386,
+Corporate Actions,Data,Total,,,,,,2359.5,-2358.2,-2782.151386,`;
+
+  it("produces a SELL transaction for the acquired shares", () => {
+    const txs = parseIbkrActivity(MERGER_CSV);
+    expect(txs).toHaveLength(1);
+    const tx = txs[0]!;
+    expect(tx.type).toBe("SELL");
+    expect(tx.broker).toBe("ibkr");
+    expect(tx.date).toBe("2023-06-29");
+    expect(tx.symbol).toBe("XM");
+    expect(tx.isin).toBe("US7476012015");
+    expect(tx.currency).toBe("USD");
+  });
+
+  it("sets quantity to the absolute number of shares removed", () => {
+    const txs = parseIbkrActivity(MERGER_CSV);
+    expect(txs[0]!.quantity!.toNumber()).toBe(130);
+  });
+
+  it("sets grossAmount from Proceeds and computes pricePerShare", () => {
+    const txs = parseIbkrActivity(MERGER_CSV);
+    const tx = txs[0]!;
+    // Proceeds = 2359.5, quantity = 130 → price = 18.15
+    expect(tx.grossAmount.toNumber()).toBe(2359.5);
+    expect(tx.pricePerShare!.toFixed(2)).toBe("18.15");
+    expect(tx.commission.toNumber()).toBe(0);
+    expect(tx.netAmount.toNumber()).toBe(2359.5);
+  });
+
+  it("skips the Total row", () => {
+    const txs = parseIbkrActivity(MERGER_CSV);
+    expect(txs).toHaveLength(1);
+  });
+});
+
+describe("parseIbkrActivity — corporate actions (delisting)", () => {
+  const DELISTED_CSV = `Corporate Actions,Header,Asset Category,Currency,Report Date,Date/Time,Description,Quantity,Proceeds,Value,Realized P/L,Code
+Corporate Actions,Data,Stocks,USD,2026-02-24,"2026-02-23, 20:25:00","(US87663X1028) Delisted (TTCF, TATTOOED CHEF INC, US87663X1028)",-150,0,0,-1011.255385,
+Corporate Actions,Data,Total,,,,,,0,0,-1011.255385,`;
+
+  it("produces a SELL at zero proceeds for delisted shares", () => {
+    const txs = parseIbkrActivity(DELISTED_CSV);
+    expect(txs).toHaveLength(1);
+    const tx = txs[0]!;
+    expect(tx.type).toBe("SELL");
+    expect(tx.date).toBe("2026-02-24");
+    expect(tx.symbol).toBe("TTCF");
+    expect(tx.isin).toBe("US87663X1028");
+    expect(tx.currency).toBe("USD");
+    expect(tx.quantity!.toNumber()).toBe(150);
+    expect(tx.grossAmount.toNumber()).toBe(0);
+    expect(tx.commission.toNumber()).toBe(0);
+    // pricePerShare omitted when zero
+    expect(tx.pricePerShare).toBeUndefined();
+  });
+});
+
 describe("parseIbkrActivity — filtering and edge cases", () => {
   it("returns empty array for empty CSV", () => {
     expect(parseIbkrActivity("")).toHaveLength(0);
@@ -407,10 +472,9 @@ Trades,Data,Order,Forex,USD,EUR.USD,"2024-01-15, 09:00:00",1000,1.09,1.09,-1090,
     expect(parseIbkrActivity(csv)).toHaveLength(0);
   });
 
-  it("ignores non-split corporate actions (mergers, delistings)", () => {
+  it("ignores truly unrecognised corporate actions (not split/merger/delisting)", () => {
     const csv = `Corporate Actions,Header,Asset Category,Currency,Report Date,Date/Time,Description,Quantity,Proceeds,Value,Realized P/L,Code
-Corporate Actions,Data,Stocks,USD,2023-06-29,"2023-06-28, 20:25:00","XM(US7476012015) Merged(Acquisition) for USD 18.15 per Share",-130,2359.5,-2358.2,-2782.15,
-Corporate Actions,Data,Stocks,USD,2026-02-24,"2026-02-23, 20:25:00","(US87663X1028) Delisted (TTCF, TATTOOED CHEF INC, US87663X1028)",-150,0,0,-1011.26,`;
+Corporate Actions,Data,Stocks,USD,2024-01-01,"2023-12-31, 20:25:00","XYZ(US1234567890) Name Change (XYZ, OLD NAME INC, US1234567890)",0,0,0,0,`;
     expect(parseIbkrActivity(csv)).toHaveLength(0);
   });
 
