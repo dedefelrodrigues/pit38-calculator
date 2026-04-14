@@ -24,3 +24,12 @@ export { fetchNbpRatesForDate, resolveAndFetchMissing } from "./nbp-api.js";
 export { parseDegiroTrades, parseDegiroAccount, parseDegiroDate, splitCsvLine } from "./degiro.js";
 
 export { parseIbkrActivity, parseIbkrDate } from "./ibkr.js";
+
+export {
+  calculateTax,
+  computeEquitySummary,
+  computeDividendSummary,
+  computeOtherIncomeSummary,
+  matchDividendsWithholding,
+} from "./calculate.js";
+export type { CalculateTaxOptions } from "./calculate.js";
