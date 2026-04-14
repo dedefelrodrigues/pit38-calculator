@@ -252,6 +252,30 @@ export function mergeNbpRates(
 }
 
 // ---------------------------------------------------------------------------
+// parseAndMergeNbpCsvs — load multiple yearly files into one NbpTable
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses one or more NBP Table A CSV strings (e.g. one file per year as
+ * downloaded from nbp.pl) and merges them into a single `NbpTable`.
+ *
+ * Each CSV is parsed independently so differing column sets across years
+ * (e.g. HRK present in 2020 but removed later) are handled correctly.
+ *
+ * Throws if the array is empty or any CSV cannot be parsed.
+ */
+export function parseAndMergeNbpCsvs(csvFiles: string[]): NbpTable {
+  if (csvFiles.length === 0) throw new Error("parseAndMergeNbpCsvs: no CSV files provided");
+
+  let table = parseNbpCsv(csvFiles[0]!);
+  for (let i = 1; i < csvFiles.length; i++) {
+    const next = parseNbpCsv(csvFiles[i]!);
+    table = mergeNbpRates(table, next.rates);
+  }
+  return table;
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 

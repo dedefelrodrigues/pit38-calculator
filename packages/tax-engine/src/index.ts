@@ -16,7 +16,7 @@ export type {
 export { processFifo } from "./fifo.js";
 export type { FifoResult } from "./fifo.js";
 
-export { parseNbpCsv, lookupFxRate, enrichTransaction, enrichTransactions, detectMissingRates, mergeNbpRates } from "./fx.js";
+export { parseNbpCsv, parseAndMergeNbpCsvs, lookupFxRate, enrichTransaction, enrichTransactions, detectMissingRates, mergeNbpRates } from "./fx.js";
 export type { NbpTable, FxRateLookup, MissingRate } from "./fx.js";
 
 export { fetchNbpRatesForDate, resolveAndFetchMissing } from "./nbp-api.js";

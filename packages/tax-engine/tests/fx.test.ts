@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Decimal from "decimal.js";
-import { parseNbpCsv, lookupFxRate, enrichTransaction, detectMissingRates, mergeNbpRates } from "../src/fx.js";
+import { parseNbpCsv, parseAndMergeNbpCsvs, lookupFxRate, enrichTransaction, detectMissingRates, mergeNbpRates } from "../src/fx.js";
 import type { RawTransaction } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -369,5 +369,79 @@ describe("mergeNbpRates", () => {
     expectRate(row.get("USD")!, "3.9432");
     // New currency added
     expectRate(row.get("CNH")!, "0.5500");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Real yearly NBP files (reference/nbp_rates/)
+// ---------------------------------------------------------------------------
+
+const RATES_DIR = resolve(__dirname, "../../../reference/nbp_rates");
+
+function readYearCsv(year: number): string {
+  return readFileSync(resolve(RATES_DIR, `archiwum_tab_a_${year}.csv`), "latin1");
+}
+
+describe("parseNbpCsv — real yearly files", () => {
+  it("parses archiwum_tab_a_2024.csv without throwing", () => {
+    const table = parseNbpCsv(readYearCsv(2024));
+    // 2024 is a full year of trading days; expect at least 250 entries
+    expect(table.dates.length).toBeGreaterThanOrEqual(250);
+    expect(table.dates[0]).toBe("2024-01-02");
+  });
+
+  it("parses archiwum_tab_a_2020.csv which contains extra currencies (HRK, RUB)", () => {
+    const table = parseNbpCsv(readYearCsv(2020));
+    expect(table.dates.length).toBeGreaterThanOrEqual(250);
+    // HRK (Croatian Kuna) was in 2020 tables
+    const row = table.rates.get("2020-01-02")!;
+    expect(row.get("HRK")).toBeDefined();
+    expect(row.get("USD")).toBeDefined();
+  });
+
+  it("skips the trailing summary rows (kod ISO, nazwa waluty, liczba jednostek)", () => {
+    // If trailing rows were misparsed as dates the table would be corrupted
+    const table = parseNbpCsv(readYearCsv(2024));
+    for (const date of table.dates) {
+      expect(date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it("rates are in PLN-per-1-unit (multipliers already applied)", () => {
+    const table = parseNbpCsv(readYearCsv(2024));
+    const row = table.rates.get("2024-01-02")!;
+    // From the file: 100HUF = 1,1365 PLN → per 1 HUF = 0.011365
+    expect(row.get("HUF")!.toFixed(6)).toBe("0.011365");
+    // 1USD = 3,9432
+    expect(row.get("USD")!.toFixed(4)).toBe("3.9432");
+  });
+});
+
+describe("parseAndMergeNbpCsvs", () => {
+  it("throws when called with empty array", () => {
+    expect(() => parseAndMergeNbpCsvs([])).toThrow();
+  });
+
+  it("merges two yearly files into one table spanning both years", () => {
+    const table = parseAndMergeNbpCsvs([readYearCsv(2023), readYearCsv(2024)]);
+    expect(table.dates[0]!.startsWith("2023")).toBe(true);
+    expect(table.dates[table.dates.length - 1]!.startsWith("2024")).toBe(true);
+    expect(table.dates.length).toBeGreaterThanOrEqual(500);
+  });
+
+  it("dates remain sorted after merge", () => {
+    const table = parseAndMergeNbpCsvs([readYearCsv(2024), readYearCsv(2023)]);
+    for (let i = 1; i < table.dates.length; i++) {
+      expect(table.dates[i]! > table.dates[i - 1]!).toBe(true);
+    }
+  });
+
+  it("currencies unique to one year are accessible after merge", () => {
+    // 2020 has HRK; 2024 does not — both should be present after merge
+    const table = parseAndMergeNbpCsvs([readYearCsv(2020), readYearCsv(2024)]);
+    const row2020 = table.rates.get("2020-01-02")!;
+    const row2024 = table.rates.get("2024-01-02")!;
+    expect(row2020.get("HRK")).toBeDefined();
+    expect(row2024.get("USD")).toBeDefined();
   });
 });
