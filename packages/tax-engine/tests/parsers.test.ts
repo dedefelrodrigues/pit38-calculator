@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import Decimal from "decimal.js";
 import { parseDegiroTrades, parseDegiroAccount, parseDegiroDate, splitCsvLine } from "../src/degiro.js";
+import { parseIbkrActivity, parseIbkrDate } from "../src/ibkr.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -245,5 +246,187 @@ describe("parseDegiroAccount", () => {
     const csv = `Date,Time,Value date,Product,ISIN,Description,FX,Change,,Balance,,Order Id
 10-01-2024,08:00,10-01-2024,,,Some Unknown Operation,,EUR,5.00,EUR,100.00,`;
     expect(parseDegiroAccount(csv)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseIbkrDate
+// ---------------------------------------------------------------------------
+
+describe("parseIbkrDate", () => {
+  it("extracts date from IBKR datetime string", () => {
+    expect(parseIbkrDate("2022-09-02, 14:32:10")).toBe("2022-09-02");
+    expect(parseIbkrDate("2024-06-10, 20:25:00")).toBe("2024-06-10");
+  });
+
+  it("accepts plain ISO date", () => {
+    expect(parseIbkrDate("2024-06-10")).toBe("2024-06-10");
+  });
+
+  it("returns null for empty or invalid input", () => {
+    expect(parseIbkrDate("")).toBeNull();
+    expect(parseIbkrDate(undefined)).toBeNull();
+    expect(parseIbkrDate("06/10/2024")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseIbkrActivity — combined fixture
+// ---------------------------------------------------------------------------
+
+// Minimal multi-section IBKR activity statement covering all handled sections.
+const IBKR_CSV = `Financial Instrument Information,Header,Asset Category,Symbol,Description,Conid,Security ID,Underlying,Listing Exch,Multiplier,Type,Code
+Financial Instrument Information,Data,Stocks,NVDA,NVIDIA CORP,4815747,US67066G1040,,NASDAQ,1,COMMON,
+Financial Instrument Information,Data,Stocks,ABBV,ABBVIE INC,118089500,US00287Y1091,,NYSE,1,COMMON,
+Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,Realized P/L %,MTM P/L,Code
+Trades,Data,Order,Stocks,USD,NVDA,"2022-09-02, 14:32:10",10,136.82,136.5,-1368.2,-0.35,1368.55,0,0,-3.2,O
+Trades,Data,Order,Stocks,USD,NVDA,"2025-11-26, 10:15:00",-5,1814,1810,9070,-0.52,-6426.57,2643.43,0.41112,0,C
+Trades,SubTotal,,Stocks,USD,NVDA,,0,,,7701.8,-0.87,,,,,
+Trades,Total,,Stocks,USD,,,,,,,,,,,,,
+Dividends,Header,Currency,Date,Description,Amount
+Dividends,Data,USD,2022-09-29,ABBV(US00287Y1091) Cash Dividend USD 1.30 per Share (Ordinary Dividend),65
+Dividends,Data,Total,,,65
+Withholding Tax,Header,Currency,Date,Description,Amount,Code
+Withholding Tax,Data,USD,2022-09-29,ABBV(US00287Y1091) Cash Dividend USD 1.30 per Share - US Tax,-9.75,
+Withholding Tax,Data,Total,,,-9.75,
+Corporate Actions,Header,Asset Category,Currency,Report Date,Date/Time,Description,Quantity,Proceeds,Value,Realized P/L,Code
+Corporate Actions,Data,Stocks,USD,2024-06-10,"2024-06-07, 20:25:00","NVDA(US67066G1040) Split 10 for 1 (NVDA, NVIDIA CORP, US67066G1040)",108,0,0,0,
+Corporate Actions,Data,Total,,,,,,0,0,0,`;
+
+describe("parseIbkrActivity — trades", () => {
+  it("parses a BUY trade correctly", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const buy = txs.find((t) => t.type === "BUY" && t.symbol === "NVDA");
+    expect(buy).toBeDefined();
+    expect(buy!.broker).toBe("ibkr");
+    expect(buy!.date).toBe("2022-09-02");
+    expect(buy!.symbol).toBe("NVDA");
+    expect(buy!.isin).toBe("US67066G1040");
+    expect(buy!.name).toBe("NVIDIA CORP");
+    expect(buy!.currency).toBe("USD");
+    expect(buy!.quantity!.toNumber()).toBe(10);
+    expect(buy!.pricePerShare!.toNumber()).toBe(136.82);
+    // grossAmount = abs(Proceeds) = 1368.2
+    expect(buy!.grossAmount.toNumber()).toBe(1368.2);
+    // commission = abs(Comm/Fee) = 0.35
+    expect(buy!.commission.toNumber()).toBe(0.35);
+    // netAmount = gross + commission for BUY
+    expect(buy!.netAmount.toNumber()).toBe(1368.55);
+  });
+
+  it("parses a SELL trade correctly", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const sell = txs.find((t) => t.type === "SELL" && t.symbol === "NVDA");
+    expect(sell).toBeDefined();
+    expect(sell!.date).toBe("2025-11-26");
+    expect(sell!.quantity!.toNumber()).toBe(5);
+    expect(sell!.pricePerShare!.toNumber()).toBe(1814);
+    // grossAmount = abs(Proceeds) = 9070
+    expect(sell!.grossAmount.toNumber()).toBe(9070);
+    expect(sell!.commission.toNumber()).toBe(0.52);
+    // netAmount = gross − commission for SELL
+    expect(sell!.netAmount.toNumber()).toBe(9069.48);
+  });
+
+  it("enriches trades with ISIN and name from Financial Instrument Information", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const buy = txs.find((t) => t.type === "BUY" && t.symbol === "NVDA");
+    expect(buy!.isin).toBe("US67066G1040");
+    expect(buy!.name).toBe("NVIDIA CORP");
+  });
+
+  it("skips SubTotal and Total rows", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const trades = txs.filter((t) => t.type === "BUY" || t.type === "SELL");
+    expect(trades).toHaveLength(2);
+  });
+});
+
+describe("parseIbkrActivity — dividends", () => {
+  it("parses a USD dividend correctly", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const div = txs.find((t) => t.type === "DIVIDEND");
+    expect(div).toBeDefined();
+    expect(div!.date).toBe("2022-09-29");
+    expect(div!.symbol).toBe("ABBV");
+    expect(div!.isin).toBe("US00287Y1091");
+    expect(div!.currency).toBe("USD");
+    expect(div!.grossAmount.toNumber()).toBe(65);
+    expect(div!.commission.toNumber()).toBe(0);
+  });
+
+  it("skips Dividends Total row", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const divs = txs.filter((t) => t.type === "DIVIDEND");
+    expect(divs).toHaveLength(1);
+  });
+});
+
+describe("parseIbkrActivity — withholding tax", () => {
+  it("parses withholding tax as positive grossAmount", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const wht = txs.find((t) => t.type === "WITHHOLDING_TAX");
+    expect(wht).toBeDefined();
+    expect(wht!.date).toBe("2022-09-29");
+    expect(wht!.symbol).toBe("ABBV");
+    expect(wht!.isin).toBe("US00287Y1091");
+    expect(wht!.currency).toBe("USD");
+    // IBKR reports as -9.75 → stored as positive 9.75
+    expect(wht!.grossAmount.toNumber()).toBe(9.75);
+  });
+});
+
+describe("parseIbkrActivity — corporate actions (stock splits)", () => {
+  it("parses a 10:1 split with correct ratio", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const split = txs.find((t) => t.type === "STOCK_SPLIT");
+    expect(split).toBeDefined();
+    expect(split!.symbol).toBe("NVDA");
+    expect(split!.isin).toBe("US67066G1040");
+    expect(split!.date).toBe("2024-06-10");
+    // ratio = 10/1 = 10
+    expect(split!.quantity!.toNumber()).toBe(10);
+  });
+
+  it("skips Corporate Actions Total row", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const splits = txs.filter((t) => t.type === "STOCK_SPLIT");
+    expect(splits).toHaveLength(1);
+  });
+});
+
+describe("parseIbkrActivity — filtering and edge cases", () => {
+  it("returns empty array for empty CSV", () => {
+    expect(parseIbkrActivity("")).toHaveLength(0);
+  });
+
+  it("ignores non-Stocks trade rows (Options, Forex, etc.)", () => {
+    const csv = `Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,Realized P/L %,MTM P/L,Code
+Trades,Data,Order,Options,USD,NVDA  240119C00500000,"2024-01-19, 10:00:00",-1,5.5,5.4,550,-0.70,0,0,0,150,C
+Trades,Data,Order,Forex,USD,EUR.USD,"2024-01-15, 09:00:00",1000,1.09,1.09,-1090,-0.5,0,0,0,0,O`;
+    expect(parseIbkrActivity(csv)).toHaveLength(0);
+  });
+
+  it("ignores non-split corporate actions (mergers, delistings)", () => {
+    const csv = `Corporate Actions,Header,Asset Category,Currency,Report Date,Date/Time,Description,Quantity,Proceeds,Value,Realized P/L,Code
+Corporate Actions,Data,Stocks,USD,2023-06-29,"2023-06-28, 20:25:00","XM(US7476012015) Merged(Acquisition) for USD 18.15 per Share",-130,2359.5,-2358.2,-2782.15,
+Corporate Actions,Data,Stocks,USD,2026-02-24,"2026-02-23, 20:25:00","(US87663X1028) Delisted (TTCF, TATTOOED CHEF INC, US87663X1028)",-150,0,0,-1011.26,`;
+    expect(parseIbkrActivity(csv)).toHaveLength(0);
+  });
+
+  it("handles amounts with thousands commas", () => {
+    const csv = `Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,C. Price,Proceeds,Comm/Fee,Basis,Realized P/L,Realized P/L %,MTM P/L,Code
+Trades,Data,Order,Stocks,USD,SPY,"2024-01-15, 10:00:00",100,479.5,479,-47950,-1.05,47951.05,0,0,-50,O`;
+    const txs = parseIbkrActivity(csv);
+    expect(txs).toHaveLength(1);
+    expect(txs[0].grossAmount.toNumber()).toBe(47950);
+    expect(txs[0].commission.toNumber()).toBe(1.05);
+  });
+
+  it("assigns unique ids to each transaction", () => {
+    const txs = parseIbkrActivity(IBKR_CSV);
+    const ids = txs.map((t) => t.id);
+    const unique = new Set(ids);
+    expect(unique.size).toBe(ids.length);
   });
 });

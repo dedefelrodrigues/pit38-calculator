@@ -42,7 +42,8 @@ export type TransactionType =
   | "DIVIDEND"
   | "WITHHOLDING_TAX" // tax withheld at source on dividends/interest
   | "FEE" // standalone account or custody fees (not per-trade commissions)
-  | "OTHER_INCOME"; // interest, FX gains, corporate actions, etc.
+  | "OTHER_INCOME" // interest, FX gains, corporate actions, etc.
+  | "STOCK_SPLIT"; // Non-taxable corporate action. quantity = new shares per old share (e.g. 10 for 10:1, 0.1 for 1:10 reverse).
 
 // ---------------------------------------------------------------------------
 // RawTransaction — parser output, no PLN values yet

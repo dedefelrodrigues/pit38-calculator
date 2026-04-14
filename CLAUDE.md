@@ -5,6 +5,8 @@
 PIT-38 Polish capital gains tax calculator.
 Browser-only React app — no backend, no database.
 All calculation happens client-side.
+Historical NBP rates preloaded at reference-nbp_rates folder in the original format from NBP website.
+If a transaction is at a date where there is no NBP rate, than it should attempt to take using the NBP website API.
 
 ## Architecture
 

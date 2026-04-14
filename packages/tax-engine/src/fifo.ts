@@ -25,14 +25,14 @@ export interface FifoResult {
  */
 export function processFifo(transactions: Transaction[]): FifoResult {
   const sorted = [...transactions]
-    .filter((tx) => tx.type === "BUY" || tx.type === "SELL")
+    .filter((tx) => tx.type === "BUY" || tx.type === "SELL" || tx.type === "STOCK_SPLIT")
     .sort((a, b) => {
       const dateCmp = a.date.localeCompare(b.date);
       if (dateCmp !== 0) return dateCmp;
-      // Same date: BUYs before SELLs so an intraday buy is available immediately
-      if (a.type === "BUY" && b.type === "SELL") return -1;
-      if (a.type === "SELL" && b.type === "BUY") return 1;
-      return 0;
+      // Same-date ordering: STOCK_SPLIT → BUY → SELL
+      // Splits are market-open events that precede any same-day trading.
+      const order: Record<string, number> = { STOCK_SPLIT: 0, BUY: 1, SELL: 2 };
+      return (order[a.type] ?? 3) - (order[b.type] ?? 3);
     });
 
   // Per-symbol FIFO queues. Oldest lot is at index 0.
@@ -59,6 +59,26 @@ export function processFifo(transactions: Transaction[]): FifoResult {
 
       if (!queues.has(tx.symbol)) queues.set(tx.symbol, []);
       queues.get(tx.symbol)!.push(lot);
+    } else if (tx.type === "STOCK_SPLIT") {
+      const ratio = tx.quantity;
+      if (!ratio || ratio.lte(0)) {
+        throw new Error(
+          `FIFO: STOCK_SPLIT for ${tx.symbol} on ${tx.date} has invalid ratio: ` +
+            `${ratio?.toString() ?? "undefined"}`,
+        );
+      }
+      // Mutate all open lots for this symbol.
+      // Invariant: remainingQuantity × costPerSharePLN (total basis) is preserved.
+      // originalQuantity is intentionally not updated — it reflects quantity at purchase.
+      // ratio < 1 (reverse split) is valid; Decimal handles it correctly.
+      const splitQueue = queues.get(tx.symbol);
+      if (splitQueue) {
+        for (const lot of splitQueue) {
+          lot.remainingQuantity = lot.remainingQuantity.mul(ratio);
+          lot.costPerSharePLN = lot.costPerSharePLN.div(ratio);
+        }
+      }
+      // Empty queue = no open lots; split is a no-op.
     } else {
       // SELL — consume from the front of the queue (FIFO)
       const queue = queues.get(tx.symbol) ?? [];

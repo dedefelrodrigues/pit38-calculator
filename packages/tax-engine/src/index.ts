@@ -22,3 +22,5 @@ export type { NbpTable, FxRateLookup, MissingRate } from "./fx.js";
 export { fetchNbpRatesForDate, resolveAndFetchMissing } from "./nbp-api.js";
 
 export { parseDegiroTrades, parseDegiroAccount, parseDegiroDate, splitCsvLine } from "./degiro.js";
+
+export { parseIbkrActivity, parseIbkrDate } from "./ibkr.js";

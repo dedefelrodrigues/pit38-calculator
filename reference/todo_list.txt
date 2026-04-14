@@ -1,0 +1,14 @@
+  #  │                                                   Task                                                    │ Status  │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 1   │ Implement DEGIRO CSV parser — RawTransaction[] from trades + dividends CSV                                │ Done    │
+  ├─────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 2   │ Implement IBKR CSV parser — parse the complex multi-section IBKR activity statement                       │ Done    │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 3   │ Tax calculation orchestration — group FIFO results by year, match dividends/withholding, produce          │ Pending │
+  │     │ TaxSummary; fill in index.test.ts                                                                         │         │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 4   │ Web UI: CSV upload + NBP resolution — broker selector, file upload, fetch missing rates, enrich           │ Pending │
+  │     │ transactions                                                                                              │         │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 5   │ Web UI: results display — equity table, dividend summary, PIT-38 form totals using shadcn/ui              │ Pending │
+  └─────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────

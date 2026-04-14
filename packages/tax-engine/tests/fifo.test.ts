@@ -617,6 +617,357 @@ describe("Scenario 8: interleaved buys and sells with partial lot carry-over", (
 });
 
 // ---------------------------------------------------------------------------
+// Real-world Scenario — IBKR NVDA trades with USD→PLN FX conversion
+//
+// Source: IBKR activity statement (U***0450)
+//   Buy:  10 shares NVDA @ $136.82    on 2022-09-02  (NBP T-1 date 2022-09-01, rate 4.6959)
+//   Buy:   7 shares NVDA @ $438.61    on 2023-08-02  (NBP T-1 date 2023-08-01, rate 4.0262)
+//   Sell:  5 shares NVDA @ $1,814.00  on 2025-11-26  (NBP T-1 date 2025-11-25, rate 3.6675)
+//
+// FIFO: 5 shares consumed from Lot 1 (2022-09-02 buy); Lot 2 untouched.
+//
+// Expected (engine formula, commissions included per PIT-38 rules):
+//   Lot 1 cost/share PLN = netAmountPLN / qty = (1368.55 × 4.6959) / 10 = 642.6574
+//   Revenue PLN          = 9070.00 × 3.6675               = 33,264.23
+//   Sell commission PLN  = 0.52 × 3.6675                  =      1.91
+//   Cost basis PLN       = 5 × 642.6574                   =  3,213.29
+//   Gain/loss PLN        = 33,264.23 − 1.91 − 3,213.29   = 30,049.03
+//
+// Note: manual estimate (gross revenue − gross cost, no commissions) = 30,051.76 PLN.
+//       The 30,052.85 figure from manual lookup has a small rounding discrepancy.
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a USD-denominated Transaction with pre-computed PLN fields using a
+ * provided NBP fx rate (T-1 rule already applied by caller).
+ */
+function makeUsdTx(opts: {
+  id: string;
+  date: string;
+  fxDate: string;
+  fxRate: number;
+  type: "BUY" | "SELL";
+  symbol: string;
+  quantity: number;
+  pricePerShare: number;
+  grossAmountUSD: number;
+  commissionUSD: number;
+}): Transaction {
+  const qty = new Decimal(opts.quantity);
+  const price = new Decimal(opts.pricePerShare);
+  const gross = new Decimal(opts.grossAmountUSD);
+  const comm = new Decimal(opts.commissionUSD);
+  const rate = new Decimal(opts.fxRate);
+  // BUY net = gross + commission (total cash outflow, positive)
+  // SELL net = gross − commission (proceeds after commission, positive)
+  const net = opts.type === "BUY" ? gross.add(comm) : gross.sub(comm);
+
+  return {
+    id: opts.id,
+    broker: "ibkr",
+    date: opts.date,
+    type: opts.type,
+    symbol: opts.symbol,
+    quantity: qty,
+    pricePerShare: price,
+    currency: "USD",
+    grossAmount: gross,
+    commission: comm,
+    netAmount: net,
+    fxRate: rate,
+    fxDate: opts.fxDate,
+    grossAmountPLN: gross.mul(rate),
+    commissionPLN: comm.mul(rate),
+    netAmountPLN: net.mul(rate),
+  };
+}
+
+describe("Real-world Scenario: IBKR NVDA USD trades with FX conversion", () => {
+  const txs: Transaction[] = [
+    // Lot 1: 10 shares @ $136.82 — NBP T-1 = 2022-09-01 → 4.6959
+    makeUsdTx({
+      id: "nvda-buy-1",
+      date: "2022-09-02",
+      fxDate: "2022-09-01",
+      fxRate: 4.6959,
+      type: "BUY",
+      symbol: "NVDA",
+      quantity: 10,
+      pricePerShare: 136.82,
+      grossAmountUSD: 1368.20,
+      commissionUSD: 0.35,
+    }),
+    // Lot 2: 7 shares @ $438.61 — NBP T-1 = 2023-08-01 → 4.0262
+    makeUsdTx({
+      id: "nvda-buy-2",
+      date: "2023-08-02",
+      fxDate: "2023-08-01",
+      fxRate: 4.0262,
+      type: "BUY",
+      symbol: "NVDA",
+      quantity: 7,
+      pricePerShare: 438.61,
+      grossAmountUSD: 3070.27,
+      commissionUSD: 0.35,
+    }),
+    // Sell 5 shares @ $1,814.00 — NBP T-1 = 2025-11-25 → 3.6675
+    makeUsdTx({
+      id: "nvda-sell-1",
+      date: "2025-11-26",
+      fxDate: "2025-11-25",
+      fxRate: 3.6675,
+      type: "SELL",
+      symbol: "NVDA",
+      quantity: 5,
+      pricePerShare: 1814.00,
+      grossAmountUSD: 9070.00,
+      commissionUSD: 0.52,
+    }),
+  ];
+
+  it("produces one FIFO match", () => {
+    const { matches } = processFifo(txs);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("match is against Lot 1 only (5 of 10 shares consumed)", () => {
+    const { matches } = processFifo(txs);
+    const m = matches[0]!;
+    expect(m.lots).toHaveLength(1);
+    expectPLN(m.lots[0]!.quantityConsumed, 5, "qty consumed");
+    // costPerSharePLN = netAmountPLN / 10 = (1368.55 × 4.6959) / 10 = 642.6574
+    expectPLN(m.lots[0]!.costPerSharePLN, 642.66, "cost/share PLN");
+    // cost basis = 5 × 642.6574 = 3213.2869 → 3213.29
+    expectPLN(m.lots[0]!.costPLN, 3213.29, "lot cost PLN");
+  });
+
+  it("revenue, commission, cost basis and gain are correct in PLN", () => {
+    const { matches } = processFifo(txs);
+    const m = matches[0]!;
+    // revenue = 9070.00 × 3.6675 = 33,264.225 → 33264.23
+    expectPLN(m.revenueGrossPLN, 33264.23, "revenue PLN");
+    // sell commission = 0.52 × 3.6675 = 1.9071 → 1.91
+    expectPLN(m.commissionSellPLN, 1.91, "commission PLN");
+    // cost basis = 3213.29 (see above)
+    expectPLN(m.costBasisPLN, 3213.29, "cost basis PLN");
+    // gain = 33264.23 − 1.91 − 3213.29 = 30049.03
+    expectPLN(m.gainLossPLN, 30049.03, "gain PLN");
+  });
+
+  it("Lot 1 has 5 shares remaining; Lot 2 is fully intact", () => {
+    const { remainingLots } = processFifo(txs);
+    expect(remainingLots).toHaveLength(2);
+    const lot1 = remainingLots.find((l) => l.sourceTxId === "nvda-buy-1")!;
+    const lot2 = remainingLots.find((l) => l.sourceTxId === "nvda-buy-2")!;
+    expectPLN(lot1.remainingQuantity, 5, "lot1 remaining qty");
+    expectPLN(lot1.costPerSharePLN, 642.66, "lot1 cost/share");
+    expectPLN(lot2.remainingQuantity, 7, "lot2 remaining qty");
+    // lot2 cost/share = (3070.62 × 4.0262) / 7 = 12362.930 / 7 = 1766.13
+    expectPLN(lot2.costPerSharePLN, 1766.13, "lot2 cost/share");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stock Split Scenarios
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds a STOCK_SPLIT pseudo-transaction.
+ * `ratio` = new shares per old share (e.g. 10 for a 10:1 split, 0.1 for a reverse 1:10).
+ */
+function makeStockSplitTx(opts: {
+  id: string;
+  date: string;
+  symbol: string;
+  ratio: number;
+}): Transaction {
+  const ZERO = new Decimal(0);
+  return {
+    id: opts.id,
+    broker: "test",
+    date: opts.date,
+    type: "STOCK_SPLIT",
+    symbol: opts.symbol,
+    quantity: new Decimal(opts.ratio),
+    currency: "PLN",
+    grossAmount: ZERO,
+    commission: ZERO,
+    netAmount: ZERO,
+    fxRate: new Decimal(1),
+    fxDate: opts.date,
+    grossAmountPLN: ZERO,
+    commissionPLN: ZERO,
+    netAmountPLN: ZERO,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Split Scenario A — 10:1 split, sell entire post-split position
+//
+// Buy:   5 shares @ 1,000 PLN  (2024-01-15)  → lot cost = 5,000 PLN
+// Split: 10:1                  (2024-06-10)  → 50 shares @ 100 PLN/share
+// Sell: 50 shares @ 120 PLN   (2024-09-01)
+//
+// Revenue:  6,000 PLN
+// Cost:     5,000 PLN  (basis preserved across split)
+// Gain:     1,000 PLN
+// ---------------------------------------------------------------------------
+describe("Split Scenario A: 10:1 split, sell entire post-split position", () => {
+  const txs: Transaction[] = [
+    makePlnTx({ id: "b1", date: "2024-01-15", type: "BUY", symbol: "NVDA", quantity: 5, price: 1000 }),
+    makeStockSplitTx({ id: "sp1", date: "2024-06-10", symbol: "NVDA", ratio: 10 }),
+    makePlnTx({ id: "s1", date: "2024-09-01", type: "SELL", symbol: "NVDA", quantity: 50, price: 120 }),
+  ];
+
+  it("produces one match", () => {
+    const { matches } = processFifo(txs);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("cost basis is preserved across the split", () => {
+    const { matches } = processFifo(txs);
+    const m = matches[0]!;
+    expectPLN(m.revenueGrossPLN, 6_000, "revenue");
+    expectPLN(m.costBasisPLN, 5_000, "cost basis");
+    expectPLN(m.gainLossPLN, 1_000, "gain");
+  });
+
+  it("leaves no remaining lots", () => {
+    const { remainingLots } = processFifo(txs);
+    expect(remainingLots).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Split Scenario B — 10:1 split across two lots, only lot 1 sold
+//
+// Buy:   5 shares @ 1,000 PLN  (lot 1, 2024-01-15)  → basis 5,000 PLN
+// Buy:   7 shares @   800 PLN  (lot 2, 2024-03-01)  → basis 5,600 PLN
+// Split: 10:1                  (2024-06-10)
+//   → lot 1: 50 shares @ 100 PLN/share
+//   → lot 2: 70 shares @  80 PLN/share
+// Sell: 50 shares @ 120 PLN    (2024-09-01)  ← consumes lot 1 entirely
+//
+// Lot 2 remains intact with basis preserved: 70 × 80 = 5,600 PLN.
+// ---------------------------------------------------------------------------
+describe("Split Scenario B: split across two lots, only lot 1 sold", () => {
+  const txs: Transaction[] = [
+    makePlnTx({ id: "b1", date: "2024-01-15", type: "BUY", symbol: "NVDA", quantity: 5, price: 1000 }),
+    makePlnTx({ id: "b2", date: "2024-03-01", type: "BUY", symbol: "NVDA", quantity: 7, price: 800 }),
+    makeStockSplitTx({ id: "sp1", date: "2024-06-10", symbol: "NVDA", ratio: 10 }),
+    makePlnTx({ id: "s1", date: "2024-09-01", type: "SELL", symbol: "NVDA", quantity: 50, price: 120 }),
+  ];
+
+  it("lot 1 fully consumed, revenue and cost correct", () => {
+    const { matches } = processFifo(txs);
+    expect(matches).toHaveLength(1);
+    expectPLN(matches[0]!.revenueGrossPLN, 6_000, "revenue");
+    expectPLN(matches[0]!.costBasisPLN, 5_000, "cost basis lot 1");
+    expectPLN(matches[0]!.gainLossPLN, 1_000, "gain");
+  });
+
+  it("lot 2 remains with post-split qty and preserved basis", () => {
+    const { remainingLots } = processFifo(txs);
+    expect(remainingLots).toHaveLength(1);
+    const lot2 = remainingLots[0]!;
+    expectPLN(lot2.remainingQuantity, 70, "lot2 qty after split");
+    expectPLN(lot2.costPerSharePLN, 80, "lot2 cost/share after split");
+    // Total basis: 70 × 80 = 5,600 PLN (unchanged from 7 × 800)
+    expectPLN(lot2.remainingQuantity.mul(lot2.costPerSharePLN), 5_600, "lot2 total basis");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Split Scenario C — Partially consumed lot, then split, then full sell
+//
+// Buy:  10 shares @ 500 PLN  (2024-01-01)  → basis 5,000 PLN
+// Sell:  3 shares @ 600 PLN  (2024-03-01)  → 7 shares remaining, basis 3,500 PLN
+// Split: 4:1                 (2024-06-01)  → 28 shares @ 125 PLN/share
+// Sell: 28 shares @ 150 PLN  (2024-09-01)
+//
+// Sell 1: revenue 1,800 / cost 1,500 / gain   300
+// Sell 2: revenue 4,200 / cost 3,500 / gain   700
+// Invariant: 7 × 500 = 28 × 125 = 3,500 PLN preserved
+// ---------------------------------------------------------------------------
+describe("Split Scenario C: partially consumed lot split then sold", () => {
+  const txs: Transaction[] = [
+    makePlnTx({ id: "b1", date: "2024-01-01", type: "BUY", symbol: "XYZ", quantity: 10, price: 500 }),
+    makePlnTx({ id: "s1", date: "2024-03-01", type: "SELL", symbol: "XYZ", quantity: 3, price: 600 }),
+    makeStockSplitTx({ id: "sp1", date: "2024-06-01", symbol: "XYZ", ratio: 4 }),
+    makePlnTx({ id: "s2", date: "2024-09-01", type: "SELL", symbol: "XYZ", quantity: 28, price: 150 }),
+  ];
+
+  it("produces two matches", () => {
+    const { matches } = processFifo(txs);
+    expect(matches).toHaveLength(2);
+  });
+
+  it("sell 1 (pre-split): revenue 1800, cost 1500, gain 300", () => {
+    const { matches } = processFifo(txs);
+    const m = matches[0]!;
+    expectPLN(m.revenueGrossPLN, 1_800, "revenue sell1");
+    expectPLN(m.costBasisPLN, 1_500, "cost sell1");
+    expectPLN(m.gainLossPLN, 300, "gain sell1");
+  });
+
+  it("sell 2 (post-split): 28 shares, cost basis 3500 preserved, gain 700", () => {
+    const { matches } = processFifo(txs);
+    const m = matches[1]!;
+    expectPLN(m.quantitySold, 28, "qty sold");
+    expectPLN(m.revenueGrossPLN, 4_200, "revenue sell2");
+    expectPLN(m.costBasisPLN, 3_500, "cost sell2 — 7×500=28×125");
+    expectPLN(m.gainLossPLN, 700, "gain sell2");
+  });
+
+  it("leaves no remaining lots", () => {
+    const { remainingLots } = processFifo(txs);
+    expect(remainingLots).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Split Scenario D — Split on fully closed position is a no-op
+// ---------------------------------------------------------------------------
+describe("Split Scenario D: split after position fully closed is a no-op", () => {
+  const txs: Transaction[] = [
+    makePlnTx({ id: "b1", date: "2024-01-01", type: "BUY", symbol: "AAPL", quantity: 10, price: 100 }),
+    makePlnTx({ id: "s1", date: "2024-03-01", type: "SELL", symbol: "AAPL", quantity: 10, price: 150 }),
+    makeStockSplitTx({ id: "sp1", date: "2024-06-10", symbol: "AAPL", ratio: 10 }),
+  ];
+
+  it("does not throw", () => {
+    expect(() => processFifo(txs)).not.toThrow();
+  });
+
+  it("produces one match and leaves no remaining lots", () => {
+    const { matches, remainingLots } = processFifo(txs);
+    expect(matches).toHaveLength(1);
+    expect(remainingLots).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Split Scenario E — Invalid split ratio throws
+// ---------------------------------------------------------------------------
+describe("Split Scenario E: invalid split ratio throws", () => {
+  it("throws on ratio = 0", () => {
+    const txs: Transaction[] = [
+      makePlnTx({ id: "b1", date: "2024-01-01", type: "BUY", symbol: "ERR", quantity: 10, price: 100 }),
+      makeStockSplitTx({ id: "sp1", date: "2024-06-01", symbol: "ERR", ratio: 0 }),
+    ];
+    expect(() => processFifo(txs)).toThrow(/invalid ratio/i);
+  });
+
+  it("throws on negative ratio", () => {
+    const txs: Transaction[] = [
+      makePlnTx({ id: "b1", date: "2024-01-01", type: "BUY", symbol: "ERR", quantity: 10, price: 100 }),
+      makeStockSplitTx({ id: "sp1", date: "2024-06-01", symbol: "ERR", ratio: -5 }),
+    ];
+    expect(() => processFifo(txs)).toThrow(/invalid ratio/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edge cases
 // ---------------------------------------------------------------------------
 
