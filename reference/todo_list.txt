@@ -4,11 +4,55 @@
   ├─────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
   │ 2   │ Implement IBKR CSV parser — parse the complex multi-section IBKR activity statement                       │ Done    │
   ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
-  │ 3   │ Tax calculation orchestration — group FIFO results by year, match dividends/withholding, produce          │ Pending │
+  │ 3   │ Tax calculation orchestration — group FIFO results by year, match dividends/withholding, produce          │ Done    │
   │     │ TaxSummary; fill in index.test.ts                                                                         │         │
   ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
-  │ 4   │ Web UI: CSV upload + NBP resolution — broker selector, file upload, fetch missing rates, enrich           │ Pending │
+  │ 4   │ Web UI: CSV upload + NBP resolution — broker selector, file upload, fetch missing rates, enrich           │ Done    │
   │     │ transactions                                                                                              │         │
   ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
-  │ 5   │ Web UI: results display — equity table, dividend summary, PIT-38 form totals using shadcn/ui              │ Pending │
-  └─────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────
+  │ 5   │ Web UI: results display — equity table, dividend summary, PIT-38 form totals using shadcn/ui              │ Done    │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 6   │ Web UI: Tax Lots page — FIFO lot matching display with symbol summary, per-sell drill-down,               │ Done    │
+  │     │ per-lot breakdown (buy date, qty consumed, cost/share, holding days)                                      │         │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 7   │ Web UI: Open Positions page — remaining lots grouped by symbol with cost basis                            │ Done    │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 8   │ Web UI: PIT Calculator page — year tabs, equity/dividend/other summary cards, PIT-38 form reference      │ Done    │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 9   │ Web UI: Issues page — data quality checks surfaced as error/warning/info rows                             │ Pending │
+  │     │                                                                                                           │         │
+  │     │ Proposed checks (to implement in IssuesPage.tsx):                                                        │         │
+  │     │                                                                                                           │         │
+  │     │  [ERROR]   Missing buy lots — SELL with no open FIFO lot (insufficient shares). Most common cause:       │         │
+  │     │            partial history uploaded (missing earlier buys). Show symbol + sell date.                      │         │
+  │     │                                                                                                           │         │
+  │     │  [ERROR]   Negative running position — symbol position goes below zero at any transaction.               │         │
+  │     │            Indicates a SELL was processed before its matching BUY was loaded.                            │         │
+  │     │                                                                                                           │         │
+  │     │  [ERROR]   Zero or missing FX rate — enriched transaction where fxRate = 0.                              │         │
+  │     │            Indicates NBP lookup failure; PLN amounts will be wrong.                                       │         │
+  │     │                                                                                                           │         │
+  │     │  [WARNING] Orphaned withholding tax — WHT entry with no matching DIVIDEND on (symbol, date).             │         │
+  │     │            Could be a date mismatch between broker sections or a missing dividend row.                    │         │
+  │     │                                                                                                           │         │
+  │     │  [WARNING] Stock split with no open position — STOCK_SPLIT for a symbol with no open lots at             │         │
+  │     │            that date. Split is a no-op, usually caused by missing buy history.                           │         │
+  │     │                                                                                                           │         │
+  │     │  [WARNING] Large NBP rate delta — fxRate deviates >20% from adjacent day rates, suggesting a            │         │
+  │     │            CSV parse error or wrong-year file loaded.                                                     │         │
+  │     │                                                                                                           │         │
+  │     │  [WARNING] Duplicate transaction IDs — two transactions share the same broker-assigned ID.               │         │
+  │     │            The dedup layer skips one silently; surfacing it helps the user verify intent.                 │         │
+  │     │                                                                                                           │         │
+  │     │  [WARNING] Future-dated transactions — transaction date is after today. Likely a date parse              │         │
+  │     │            bug in the CSV parser (e.g. day/month swap).                                                   │         │
+  │     │                                                                                                           │         │
+  │     │  [INFO]    Unresolved ISINs — symbol still in ISIN format after resolution attempt.                      │         │
+  │     │            OpenFIGI may not have coverage; show ISIN so user can manually map.                           │         │
+  │     │                                                                                                           │         │
+  │     │  [INFO]    NBP rate gap filled via API — fxDate is significantly earlier than tx date                     │         │
+  │     │            (>5 business days). Rate was fetched live; worth verifying it looks correct.                   │         │
+  │     │                                                                                                           │         │
+  │     │  [INFO]    Mixed currency for same symbol — same ticker appears with different currencies.               │         │
+  │     │            May indicate a ticker collision between two different securities.                              │         │
+  └─────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────

@@ -10,8 +10,10 @@ const PAGE_TITLE_KEY: Record<string, StringKey> = {
   "tx-dividends": "nav_txDividends",
   "tx-other": "nav_txOther",
   "tx-corporate-actions": "nav_txCorporateActions",
+  taxLots: "nav_taxLots",
   openPositions: "nav_openPositions",
   pitCalculator: "nav_pitCalculator",
+  issues: "nav_issues",
   settings: "nav_settings",
 };
 

@@ -10,6 +10,10 @@ import { StocksPage } from "@/components/pages/StocksPage";
 import { DividendsPage } from "@/components/pages/DividendsPage";
 import { OtherPage } from "@/components/pages/OtherPage";
 import { CorporateActionsPage } from "@/components/pages/CorporateActionsPage";
+import { TaxLotsPage } from "@/components/pages/TaxLotsPage";
+import { OpenPositionsPage } from "@/components/pages/OpenPositionsPage";
+import { PitCalculatorPage } from "@/components/pages/PitCalculatorPage";
+import { IssuesPage } from "@/components/pages/IssuesPage";
 import { SettingsPage } from "@/components/pages/SettingsPage";
 
 export type Page =
@@ -18,8 +22,10 @@ export type Page =
   | "tx-dividends"
   | "tx-other"
   | "tx-corporate-actions"
+  | "taxLots"
   | "openPositions"
   | "pitCalculator"
+  | "issues"
   | "settings";
 
 function AppShell() {
@@ -36,6 +42,10 @@ function AppShell() {
           {page === "tx-dividends"          && <DividendsPage />}
           {page === "tx-other"              && <OtherPage />}
           {page === "tx-corporate-actions"  && <CorporateActionsPage />}
+          {page === "taxLots"               && <TaxLotsPage />}
+          {page === "openPositions"         && <OpenPositionsPage />}
+          {page === "pitCalculator"         && <PitCalculatorPage />}
+          {page === "issues"                && <IssuesPage />}
           {page === "settings"              && <SettingsPage />}
         </main>
       </div>
