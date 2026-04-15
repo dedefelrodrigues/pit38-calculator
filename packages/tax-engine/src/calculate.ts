@@ -204,6 +204,17 @@ export interface CalculateTaxOptions {
   lossCarryForward?: boolean;
 
   /**
+   * Additional prior-year losses to seed into the carry-forward pool before
+   * processing the uploaded transactions. Useful when the user has historical
+   * losses from years before their uploaded data range.
+   *
+   * Each entry specifies the absolute (positive) loss amount for a given year.
+   * These entries are subject to the same 5-year window and 50% cap rules.
+   * They are applied regardless of the `lossCarryForward` flag.
+   */
+  priorYearLosses?: Array<{ year: number; lossAmountPLN: Decimal }>;
+
+  /**
    * When true, IBKR CYEP/Broker Fees transactions are included in the tax
    * calculation regardless of the `includeOtherIncome` setting.
    * Positive CYEP = taxable income; negative CYEP = deductible cost.
@@ -257,7 +268,11 @@ export function calculateTax(
     includeCyep = true,
     includeInterest = true,
     includeDividendAccruals = true,
+    priorYearLosses = [],
   } = options;
+
+  // Carry-forward is active if either the auto flag is on or prior losses were supplied.
+  const effectiveLCF = lossCarryForward || priorYearLosses.length > 0;
 
   // Pre-filter: remove transactions whose tag-based category is disabled.
   const filtered = transactions.filter((tx) => {
@@ -289,14 +304,23 @@ export function calculateTax(
   // Process years in chronological order so carry-forward state accumulates
   // correctly. The result map preserves insertion order (= chronological).
   const yearsSorted = [...years].sort((a, b) => a - b);
-  const carryEntries: CarryEntry[] = [];
+
+  // Seed carry pool with user-supplied prior-year losses (oldest first).
+  const carryEntries: CarryEntry[] = [...priorYearLosses]
+    .sort((a, b) => a.year - b.year)
+    .map((p) => ({
+      fromYear: p.year,
+      originalLoss: p.lossAmountPLN,
+      remaining: p.lossAmountPLN,
+    }));
+
   const result = new Map<number, TaxSummary>();
 
   for (const year of yearsSorted) {
     // --- Equity: optionally apply carry-forward deductions ---
     let carryDeducted = ZERO;
 
-    if (lossCarryForward) {
+    if (effectiveLCF) {
       // Peek at the raw gain/loss before applying carry-forward.
       const rawGainLoss = computeEquitySummary(matches, year).totalGainLossPLN;
 
@@ -305,7 +329,8 @@ export function calculateTax(
         let remainingGain = rawGainLoss;
         for (const entry of carryEntries) {
           if (remainingGain.lte(0)) break;
-          if (year - entry.fromYear > 5) continue; // expired
+          if (entry.fromYear >= year) continue;      // can only carry forward (past → future)
+          if (year - entry.fromYear > 5) continue; // expired (> 5-year window)
           if (entry.remaining.lte(0)) continue;    // fully used
 
           // Per-year deduction cap: 50% of that year's original loss.
@@ -321,6 +346,7 @@ export function calculateTax(
     const equity = computeEquitySummary(matches, year, carryDeducted);
 
     // Record a new loss entry for future carry-forward use.
+    // Auto-detected data losses are only added when lossCarryForward is true.
     if (lossCarryForward && equity.totalGainLossPLN.lt(0)) {
       carryEntries.push({
         fromYear: year,

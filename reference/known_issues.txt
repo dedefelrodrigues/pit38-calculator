@@ -1,0 +1,11 @@
+Known Issues / Bugs (not prioritised for immediate work)
+=========================================================
+
+Format: [severity] Short title
+        Description of the problem and any known context.
+
+Severe -  NBP-API nor working
+        it seems the NBP-API fetch from the web is not working, so to re-work test it more when a rate is missing from the reference NBP rates file.
+
+        
+

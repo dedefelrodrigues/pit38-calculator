@@ -179,9 +179,22 @@ export interface MissingRate {
 }
 
 /**
+ * Maximum acceptable gap in calendar days between a found T-1 rate date and
+ * the transaction date. Beyond this threshold the rate is considered stale
+ * (the bundled table has run out of data for this period) and a fresh fetch
+ * from the NBP API is required.
+ *
+ * 14 days covers the longest legitimate Polish holiday gap plus surrounding
+ * weekends. Any larger gap means the bundled CSV simply doesn't include the
+ * relevant period (e.g. the current year's file hasn't been added yet).
+ */
+const STALE_RATE_THRESHOLD_DAYS = 14;
+
+/**
  * Scans `transactions` and returns every (transactionDate, currency) pair
- * for which `lookupFxRate` would throw — i.e. the T-1 date is not present
- * in the table.
+ * that needs a rate fetch — either because `lookupFxRate` would throw, or
+ * because the found T-1 date is more than STALE_RATE_THRESHOLD_DAYS before
+ * the transaction (indicating the bundled table has run out of data).
  *
  * PLN transactions are always skipped (no lookup needed).
  * Duplicate (date, currency) pairs are deduplicated.
@@ -203,14 +216,36 @@ export function detectMissingRates(
     if (seen.has(key)) continue;
     seen.add(key);
 
+    let needsFetch = false;
     try {
-      lookupFxRate(table, tx.date, tx.currency);
+      const { rateDate } = lookupFxRate(table, tx.date, tx.currency);
+      // A rate was found, but it may be stale: the bundled table ends before
+      // this transaction's period (e.g. no 2026 file loaded yet) and
+      // findPriorDate silently fell back to the last available date.
+      // If the gap exceeds the threshold, force an API fetch.
+      const gapDays = calendarDaysBetween(rateDate, tx.date);
+      if (gapDays > STALE_RATE_THRESHOLD_DAYS) {
+        needsFetch = true;
+      }
     } catch {
+      needsFetch = true;
+    }
+
+    if (needsFetch) {
       missing.push({ transactionDate: tx.date, currency: tx.currency });
     }
   }
 
   return missing;
+}
+
+/** Returns the number of calendar days from `earlier` to `later` (both "YYYY-MM-DD"). */
+function calendarDaysBetween(earlier: string, later: string): number {
+  return Math.round(
+    (new Date(`${later}T12:00:00Z`).getTime() -
+      new Date(`${earlier}T12:00:00Z`).getTime()) /
+      86_400_000,
+  );
 }
 
 // ---------------------------------------------------------------------------

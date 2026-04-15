@@ -3,6 +3,7 @@ import { I18nProvider } from "@/contexts/I18nContext";
 import { TransactionProvider } from "@/contexts/TransactionContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { LossCarryForwardProvider } from "@/contexts/LossCarryForwardContext";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { UploadPage } from "@/components/pages/UploadPage";
@@ -13,6 +14,7 @@ import { CorporateActionsPage } from "@/components/pages/CorporateActionsPage";
 import { TaxLotsPage } from "@/components/pages/TaxLotsPage";
 import { OpenPositionsPage } from "@/components/pages/OpenPositionsPage";
 import { PitCalculatorPage } from "@/components/pages/PitCalculatorPage";
+import { LossCarryForwardPage } from "@/components/pages/LossCarryForwardPage";
 import { IssuesPage } from "@/components/pages/IssuesPage";
 import { SettingsPage } from "@/components/pages/SettingsPage";
 
@@ -25,6 +27,7 @@ export type Page =
   | "taxLots"
   | "openPositions"
   | "pitCalculator"
+  | "lossCarryForward"
   | "issues"
   | "settings";
 
@@ -45,6 +48,7 @@ function AppShell() {
           {page === "taxLots"               && <TaxLotsPage />}
           {page === "openPositions"         && <OpenPositionsPage />}
           {page === "pitCalculator"         && <PitCalculatorPage />}
+          {page === "lossCarryForward"      && <LossCarryForwardPage />}
           {page === "issues"                && <IssuesPage />}
           {page === "settings"              && <SettingsPage />}
         </main>
@@ -58,9 +62,11 @@ export default function App() {
     <ThemeProvider>
       <I18nProvider>
         <SettingsProvider>
-          <TransactionProvider>
-            <AppShell />
-          </TransactionProvider>
+          <LossCarryForwardProvider>
+            <TransactionProvider>
+              <AppShell />
+            </TransactionProvider>
+          </LossCarryForwardProvider>
         </SettingsProvider>
       </I18nProvider>
     </ThemeProvider>

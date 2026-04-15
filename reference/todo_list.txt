@@ -19,7 +19,7 @@
   ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
   │ 8   │ Web UI: PIT Calculator page — year tabs, equity/dividend/other summary cards, PIT-38 form reference      │ Done    │
   ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
-  │ 9   │ Web UI: Issues page — data quality checks surfaced as error/warning/info rows                             │ Pending │
+  │ 9   │ Web UI: Issues page — data quality checks surfaced as error/warning/info rows                             │ Done    │
   │     │                                                                                                           │         │
   │     │ Proposed checks (to implement in IssuesPage.tsx):                                                        │         │
   │     │                                                                                                           │         │
@@ -56,3 +56,9 @@
   │     │  [INFO]    Mixed currency for same symbol — same ticker appears with different currencies.               │         │
   │     │            May indicate a ticker collision between two different securities.                              │         │
   └─────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────
+├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤
+  │ 10   │ Loss-carry forward page
+            - possibility to toggle between automatic and manual adding loss carry forward
+            - allow the user to make new entries of loss-carry forward for specific years (total loss - so that the
+            calculation part takes the 50% accordingly to polish tax law)                                           │ Done    │
+  ├─────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────┤

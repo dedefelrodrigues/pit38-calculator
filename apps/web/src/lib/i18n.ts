@@ -88,6 +88,32 @@ export const strings = {
     tx_colSource: "Source",
     tx_tagAccrual: "Accrual",
 
+    // Loss Carry-Forward page
+    nav_lossCarryForward: "Loss Carry-Fwd",
+    lcf_modeLabel: "Carry-forward mode",
+    lcf_modeAuto: "Automatic",
+    lcf_modeManual: "Manual",
+    lcf_modeAutoDesc: "Losses from uploaded transactions are detected automatically and carried forward to offset future gains. Use manual mode to add historical losses from years before your uploaded data.",
+    lcf_modeManualDesc: "Specify prior-year losses from before your uploaded data range. These are added to the carry-forward pool alongside any losses detected in the uploaded transactions.",
+    lcf_noData: "No transactions loaded. Upload files to see carry-forward data.",
+    lcf_noEquityData: "No equity sells found in the uploaded data.",
+    lcf_detectedLossesTitle: "Losses detected in uploaded data",
+    lcf_detectedLossesHint: "These losses will be automatically carried forward to offset gains in future years (max 50% of original loss per year, 5-year window).",
+    lcf_priorLossesTitle: "Prior-year losses",
+    lcf_priorLossesHint: "Enter the total equity loss (positive PLN amount) for each year. The engine applies the 50% annual cap and 5-year window per Polish tax law (Art. 9 ust. 3 ustawy o PIT).",
+    lcf_addEntry: "Add year",
+    lcf_noEntries: "No prior-year entries. Click \"Add year\" to add a historical loss.",
+    lcf_invalidAmount: "Must be a positive number",
+    lcf_previewTitle: "Year-by-year carry-forward impact",
+    lcf_previewHint: "Equity only. Shows how carry-forward deductions reduce the taxable base for each year.",
+    lcf_colYear: "Year",
+    lcf_colGainLoss: "Equity Gain / Loss",
+    lcf_colCarryApplied: "Carry Deducted",
+    lcf_colTaxBase: "Tax Base",
+    lcf_colTaxDue: "Tax Due (19%)",
+    lcf_colEntryYear: "Loss Year",
+    lcf_colEntryLoss: "Total Loss (PLN)",
+
     // Issues page
     nav_issues: "Issues",
     issues_noData: "No transactions loaded. Upload files to run data checks.",
@@ -157,6 +183,18 @@ export const strings = {
     pit_pit38divGross: "Div — Gross dividends",
     pit_pit38divWht: "Div — Foreign WHT paid",
     pit_pit38divTax: "Div — Net tax due",
+
+    // PIT-ZG annex
+    pit_zgTitle: "PIT-ZG Annex Reference (per country)",
+    pit_zgNote: "One PIT-ZG annex per country must be filed alongside PIT-38 for foreign-source income. Country is derived from the ISIN prefix. PL-coded securities are domestic and do not require PIT-ZG.",
+    pit_zgNoForeign: "No foreign-source income detected — no PIT-ZG annex required.",
+    pit_zgCountry: "Country",
+    pit_zgEquityRevenue: "C.3 — Przychód (Revenue)",
+    pit_zgEquityCost: "C.3 — Koszty (Costs)",
+    pit_zgEquityGain: "C.3 — Dochód / Strata",
+    pit_zgDivGross: "C.3 — Dywidendy (Gross)",
+    pit_zgWhtPaid: "C.3 — Podatek zapłacony za granicą (WHT)",
+    pit_zgUnknown: "Unknown (no ISIN)",
 
     // Types
     type_BUY: "Buy",
@@ -254,6 +292,32 @@ export const strings = {
     tx_colSource: "Źródło",
     tx_tagAccrual: "Naliczenie",
 
+    // Loss Carry-Forward page
+    nav_lossCarryForward: "Przeniesienie strat",
+    lcf_modeLabel: "Tryb przenoszenia strat",
+    lcf_modeAuto: "Automatyczny",
+    lcf_modeManual: "Ręczny",
+    lcf_modeAutoDesc: "Straty z wczytanych transakcji są wykrywane automatycznie i przenoszone na przyszłe zyski. Użyj trybu ręcznego, aby dodać historyczne straty z lat przed wczytanymi danymi.",
+    lcf_modeManualDesc: "Podaj straty z lat wcześniejszych niż zakres wczytanych danych. Zostaną one dodane do puli przeniesień wraz ze stratami wykrytymi w wczytanych transakcjach.",
+    lcf_noData: "Brak wczytanych transakcji. Wgraj pliki, aby zobaczyć dane o przeniesieniu strat.",
+    lcf_noEquityData: "Brak sprzedaży akcji w wczytanych danych.",
+    lcf_detectedLossesTitle: "Straty wykryte w wczytanych danych",
+    lcf_detectedLossesHint: "Straty te zostaną automatycznie przeniesione na przyszłe zyski (max 50% pierwotnej straty rocznie, okno 5-letnie).",
+    lcf_priorLossesTitle: "Straty z poprzednich lat",
+    lcf_priorLossesHint: "Podaj łączną stratę kapitałową (dodatnia kwota w PLN) dla każdego roku. Silnik stosuje limit 50% rocznie i okno 5-letnie zgodnie z polskim prawem podatkowym (Art. 9 ust. 3 ustawy o PIT).",
+    lcf_addEntry: "Dodaj rok",
+    lcf_noEntries: "Brak wpisów. Kliknij \"Dodaj rok\", aby dodać historyczną stratę.",
+    lcf_invalidAmount: "Musi być liczbą dodatnią",
+    lcf_previewTitle: "Wpływ przeniesienia strat na poszczególne lata",
+    lcf_previewHint: "Tylko akcje. Pokazuje, jak odliczenia przeniesienia strat zmniejszają podstawę opodatkowania w poszczególnych latach.",
+    lcf_colYear: "Rok",
+    lcf_colGainLoss: "Zysk / Strata",
+    lcf_colCarryApplied: "Odliczone przeniesienie",
+    lcf_colTaxBase: "Podstawa",
+    lcf_colTaxDue: "Podatek (19%)",
+    lcf_colEntryYear: "Rok straty",
+    lcf_colEntryLoss: "Łączna strata (PLN)",
+
     // Issues page
     nav_issues: "Problemy",
     issues_noData: "Brak załadowanych transakcji. Wgraj pliki, aby uruchomić sprawdzanie danych.",
@@ -323,6 +387,18 @@ export const strings = {
     pit_pit38divGross: "Dyw. — Dywidendy brutto",
     pit_pit38divWht: "Dyw. — Zapłacony podatek zagraniczny",
     pit_pit38divTax: "Dyw. — Podatek do zapłaty",
+
+    // PIT-ZG annex
+    pit_zgTitle: "Załącznik PIT-ZG (według kraju)",
+    pit_zgNote: "Dla każdego kraju zagranicznego należy złożyć oddzielny załącznik PIT-ZG wraz z PIT-38. Kraj określany jest na podstawie prefiksu ISIN. Papiery wartościowe z kodem PL są krajowe i nie wymagają PIT-ZG.",
+    pit_zgNoForeign: "Nie wykryto przychodów zagranicznych — załącznik PIT-ZG nie jest wymagany.",
+    pit_zgCountry: "Kraj",
+    pit_zgEquityRevenue: "C.3 — Przychód",
+    pit_zgEquityCost: "C.3 — Koszty uzyskania",
+    pit_zgEquityGain: "C.3 — Dochód / Strata",
+    pit_zgDivGross: "C.3 — Dywidendy (brutto)",
+    pit_zgWhtPaid: "C.3 — Podatek zapłacony za granicą",
+    pit_zgUnknown: "Nieznany (brak ISIN)",
 
     // Types
     type_BUY: "Kupno",

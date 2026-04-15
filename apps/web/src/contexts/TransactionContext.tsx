@@ -58,17 +58,29 @@ const TransactionContext = createContext<TransactionCtx | null>(null);
 // NBP rate loading (once at app start)
 // ---------------------------------------------------------------------------
 
-const NBP_YEARS = [2020, 2021, 2022, 2023, 2024, 2025];
+const NBP_BASE_YEARS = [2020, 2021, 2022, 2023, 2024, 2025];
 
 async function loadBundledNbpRates(): Promise<NbpTable> {
-  const texts = await Promise.all(
-    NBP_YEARS.map(async (year) => {
+  // Always attempt to load the current year so transactions from the ongoing
+  // year are covered without a bundled file update. Missing files (404) are
+  // skipped gracefully — the NBP API will fill any remaining gaps.
+  const currentYear = new Date().getFullYear();
+  const years =
+    currentYear > NBP_BASE_YEARS[NBP_BASE_YEARS.length - 1]!
+      ? [...NBP_BASE_YEARS, currentYear]
+      : NBP_BASE_YEARS;
+
+  const results = await Promise.all(
+    years.map(async (year) => {
       const res = await fetch(`/nbp_rates/archiwum_tab_a_${year}.csv`);
-      if (!res.ok)
-        throw new Error(`Cannot load NBP rates for ${year}: ${res.status}`);
+      if (!res.ok) return null; // missing file (e.g. current year not bundled yet) — skip
       return res.text();
     }),
   );
+
+  const texts = results.filter((t): t is string => t !== null);
+  if (texts.length === 0)
+    throw new Error("Cannot load any bundled NBP rates — check the public/nbp_rates folder");
   return parseAndMergeNbpCsvs(texts);
 }
 

@@ -23,8 +23,9 @@ const NAV: NavEntry[] = [
   { type: "separator" },
   { type: "item",      id: "taxLots",       labelKey: "nav_taxLots" },
   { type: "item",      id: "openPositions", labelKey: "nav_openPositions" },
-  { type: "item",      id: "pitCalculator", labelKey: "nav_pitCalculator" },
-  { type: "item",      id: "issues",        labelKey: "nav_issues" },
+  { type: "item",      id: "pitCalculator",   labelKey: "nav_pitCalculator" },
+  { type: "item",      id: "lossCarryForward", labelKey: "nav_lossCarryForward" },
+  { type: "item",      id: "issues",          labelKey: "nav_issues" },
   { type: "separator" },
   { type: "item",      id: "settings",      labelKey: "nav_settings" },
 ];
