@@ -73,7 +73,11 @@ async function loadBundledNbpRates(): Promise<NbpTable> {
   const results = await Promise.all(
     years.map(async (year) => {
       const res = await fetch(`/nbp_rates/archiwum_tab_a_${year}.csv`);
-      if (!res.ok) return null; // missing file (e.g. current year not bundled yet) — skip
+      if (!res.ok) return null; // 404 — file not bundled yet
+      // Guard against SPA fallback: Vite (and many static hosts) return
+      // index.html with status 200 for unknown paths. Reject HTML responses.
+      const contentType = res.headers.get("content-type") ?? "";
+      if (contentType.includes("text/html")) return null;
       return res.text();
     }),
   );
