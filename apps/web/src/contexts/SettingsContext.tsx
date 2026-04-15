@@ -11,13 +11,13 @@ interface SettingsCtx {
 
 const SettingsContext = createContext<SettingsCtx | null>(null);
 
-/** Defaults that match the documented per-option defaults in CalculateTaxOptions. */
+/** All toggles off by default — user opts in explicitly. */
 const DEFAULT_OPTIONS: CalculateTaxOptions = {
   includeOtherIncome: false,
   lossCarryForward: false,
-  includeCyep: true,
-  includeInterest: true,
-  includeDividendAccruals: true,
+  includeCyep: false,
+  includeInterest: false,
+  includeDividendAccruals: false,
 };
 
 export function SettingsProvider({ children }: { children: ReactNode }) {

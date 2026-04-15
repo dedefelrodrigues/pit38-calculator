@@ -79,21 +79,21 @@ export function SettingsPage() {
           <SettingToggle
             label={t("settings_includeDividendAccruals")}
             description={t("settings_includeDividendAccrualsDesc")}
-            value={options.includeDividendAccruals ?? true}
+            value={options.includeDividendAccruals ?? false}
             onChange={() => toggle("includeDividendAccruals")}
           />
           <Separator />
           <SettingToggle
             label={t("settings_includeCyep")}
             description={t("settings_includeCyepDesc")}
-            value={options.includeCyep ?? true}
+            value={options.includeCyep ?? false}
             onChange={() => toggle("includeCyep")}
           />
           <Separator />
           <SettingToggle
             label={t("settings_includeInterest")}
             description={t("settings_includeInterestDesc")}
-            value={options.includeInterest ?? true}
+            value={options.includeInterest ?? false}
             onChange={() => toggle("includeInterest")}
           />
           <Separator />
