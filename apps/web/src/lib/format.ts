@@ -1,17 +1,26 @@
 import type Decimal from "decimal.js";
 
-/** Format a Decimal as a PLN amount with 2 decimal places and thousands separator. */
 export function formatPLN(value: Decimal): string {
-  const n = value.toNumber();
   return new Intl.NumberFormat("pl-PL", {
     style: "currency",
     currency: "PLN",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(n);
+  }).format(value.toNumber());
 }
 
-/** Format a Decimal as a number with 4 decimal places (for quantities). */
+export function formatNumber(value: Decimal, decimals = 2): string {
+  return new Intl.NumberFormat("pl-PL", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: decimals,
+  }).format(value.toNumber());
+}
+
 export function formatQty(value: Decimal): string {
-  return value.toFixed(4).replace(/\.?0+$/, "");
+  const n = value.toNumber();
+  if (Number.isInteger(n)) return String(n);
+  return new Intl.NumberFormat("pl-PL", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  }).format(n);
 }

@@ -42,6 +42,8 @@ export function parseIbkrActivity(csv: string): RawTransaction[] {
 
   // Pass 2 — parse transactions.
   const results: RawTransaction[] = [];
+  // Accumulator for dividend accruals (must be aggregated before emitting).
+  const accrualMap = new Map<string, AccrualGroup>();
 
   for (const line of lines) {
     const trimmed = line.trimEnd();
@@ -62,9 +64,24 @@ export function parseIbkrActivity(csv: string): RawTransaction[] {
       tx = parseWithholdingLine(cols);
     } else if (section === "Corporate Actions") {
       tx = parseCorporateActionLine(cols);
+    } else if (section === "Fees") {
+      tx = parseFeeLine(cols);
+    } else if (section === "CYEP/Broker Fees") {
+      tx = parseCyepLine(cols);
+    } else if (section === "Interest") {
+      tx = parseInterestLine(cols);
+    } else if (section === "Change in Dividend Accruals") {
+      accumulateDividendAccrual(cols, accrualMap);
     }
 
     if (tx) results.push(tx);
+  }
+
+  // Finalise dividend accruals: emit one DIVIDEND (+optional WITHHOLDING_TAX)
+  // per group where the net amount is non-zero.
+  for (const group of accrualMap.values()) {
+    const txs = finalizeDividendAccrualGroup(group);
+    results.push(...txs);
   }
 
   return results;
@@ -299,6 +316,228 @@ function parseCorporateActionLine(cols: string[]): RawTransaction | null {
     commission: ZERO,
     netAmount: grossAmount,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Fees  (IBKR "Fees" section — market-data subscriptions, misc account fees)
+// ---------------------------------------------------------------------------
+// Header: Subtitle,Currency,Date,Description,Amount
+// Cols (after section+rowType):  2=Subtitle  3=Currency  4=Date  5=Desc  6=Amount
+
+const FEE_SUBTITLE = 2;
+const FEE_CURRENCY = 3;
+const FEE_DATE = 4;
+const FEE_DESC = 5;
+const FEE_AMOUNT = 6;
+
+function parseFeeLine(cols: string[]): RawTransaction | null {
+  const subtitle = cols[FEE_SUBTITLE]?.trim() ?? "";
+  // Skip aggregate/total rows
+  if (!subtitle || subtitle.toLowerCase().startsWith("total")) return null;
+
+  const date = cols[FEE_DATE]?.trim();
+  if (!date || !isIsoDate(date)) return null;
+
+  const amountRaw = parseAmount(cols[FEE_AMOUNT]?.trim());
+  if (!amountRaw || amountRaw.isZero()) return null;
+
+  const currency = (cols[FEE_CURRENCY]?.trim() || "USD") as Currency;
+  const description = cols[FEE_DESC]?.trim() || undefined;
+  const grossAmount = amountRaw.abs();
+  // IBKR reports fees as negative; positive = credit/refund
+  const type = amountRaw.isNegative() ? "FEE" : "OTHER_INCOME";
+
+  return {
+    id: crypto.randomUUID(),
+    broker: "ibkr",
+    date,
+    type,
+    symbol: "IBKR-FEES",
+    tag: "ibkr-fee",
+    ...(description !== undefined && { name: description }),
+    currency,
+    grossAmount,
+    commission: new Decimal(0),
+    netAmount: grossAmount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CYEP / Broker Fees
+// ---------------------------------------------------------------------------
+// Header: Currency,Date,Description,Amount,Code
+// Cols:  2=Currency  3=Date  4=Description  5=Amount  6=Code(optional)
+
+const CYEP_CURRENCY = 2;
+const CYEP_DATE = 3;
+const CYEP_DESC = 4;
+const CYEP_AMOUNT = 5;
+
+function parseCyepLine(cols: string[]): RawTransaction | null {
+  const date = cols[CYEP_DATE]?.trim();
+  if (!date || !isIsoDate(date)) return null;
+
+  const amountRaw = parseAmount(cols[CYEP_AMOUNT]?.trim());
+  if (!amountRaw || amountRaw.isZero()) return null;
+
+  const currency = (cols[CYEP_CURRENCY]?.trim() || "EUR") as Currency;
+  const description = cols[CYEP_DESC]?.trim() || undefined;
+  const grossAmount = amountRaw.abs();
+  // Positive = income (CYEP credit), negative = cost (broker fee debit)
+  const type = amountRaw.isPositive() ? "OTHER_INCOME" : "FEE";
+
+  return {
+    id: crypto.randomUUID(),
+    broker: "ibkr",
+    date,
+    type,
+    symbol: "CYEP",
+    tag: "cyep",
+    ...(description !== undefined && { name: description }),
+    currency,
+    grossAmount,
+    commission: new Decimal(0),
+    netAmount: grossAmount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Interest
+// ---------------------------------------------------------------------------
+// Header: Currency,Date,Description,Amount
+// Cols:  2=Currency  3=Date  4=Description  5=Amount
+
+const INT_CURRENCY = 2;
+const INT_DATE = 3;
+const INT_DESC = 4;
+const INT_AMOUNT = 5;
+
+function parseInterestLine(cols: string[]): RawTransaction | null {
+  const date = cols[INT_DATE]?.trim();
+  if (!date || !isIsoDate(date)) return null;
+
+  const amountRaw = parseAmount(cols[INT_AMOUNT]?.trim());
+  if (!amountRaw || amountRaw.isZero()) return null;
+
+  const currency = (cols[INT_CURRENCY]?.trim() || "EUR") as Currency;
+  const description = cols[INT_DESC]?.trim() || undefined;
+  const grossAmount = amountRaw.abs();
+  // Positive = credit interest (income), negative = debit interest (cost)
+  const type = amountRaw.isPositive() ? "OTHER_INCOME" : "FEE";
+
+  return {
+    id: crypto.randomUUID(),
+    broker: "ibkr",
+    date,
+    type,
+    symbol: "IBKR-INTEREST",
+    tag: "interest",
+    ...(description !== undefined && { name: description }),
+    currency,
+    grossAmount,
+    commission: new Decimal(0),
+    netAmount: grossAmount,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Change in Dividend Accruals
+// ---------------------------------------------------------------------------
+// Header: Asset Category,Currency,Symbol,Date,Ex Date,Pay Date,Quantity,Tax,Fee,
+//         Gross Rate,Gross Amount,Net Amount,Code
+// Cols:  2=AssetCat  3=Currency  4=Symbol  5=Date  6=ExDate  7=PayDate
+//        8=Quantity  9=Tax  10=Fee  11=GrossRate  12=GrossAmount  13=NetAmount  14=Code
+
+const DA_ASSET_CATEGORY = 2;
+const DA_CURRENCY = 3;
+const DA_SYMBOL = 4;
+const DA_EX_DATE = 6;
+const DA_PAY_DATE = 7;
+const DA_TAX = 9;
+const DA_GROSS_AMOUNT = 12;
+
+interface AccrualGroup {
+  symbol: string;
+  currency: Currency;
+  payDate: string;
+  sumGross: Decimal;
+  sumTax: Decimal;
+}
+
+function accumulateDividendAccrual(
+  cols: string[],
+  map: Map<string, AccrualGroup>,
+): void {
+  if (cols[DA_ASSET_CATEGORY]?.trim() !== "Stocks") return;
+
+  const symbol = cols[DA_SYMBOL]?.trim();
+  if (!symbol) return;
+
+  const exDate = cols[DA_EX_DATE]?.trim();
+  const payDate = cols[DA_PAY_DATE]?.trim();
+  if (!exDate || !isIsoDate(exDate)) return;
+  if (!payDate || !isIsoDate(payDate)) return;
+
+  const grossAmount = parseAmount(cols[DA_GROSS_AMOUNT]?.trim());
+  const taxAmount = parseAmount(cols[DA_TAX]?.trim());
+  if (!grossAmount) return;
+
+  const currency = (cols[DA_CURRENCY]?.trim() || "USD") as Currency;
+  const key = `${symbol}|${exDate}|${payDate}`;
+
+  const existing = map.get(key);
+  if (existing) {
+    existing.sumGross = existing.sumGross.add(grossAmount);
+    existing.sumTax = existing.sumTax.add(taxAmount ?? new Decimal(0));
+  } else {
+    map.set(key, {
+      symbol,
+      currency,
+      payDate,
+      sumGross: grossAmount,
+      sumTax: taxAmount ?? new Decimal(0),
+    });
+  }
+}
+
+function finalizeDividendAccrualGroup(group: AccrualGroup): RawTransaction[] {
+  // Po+Re pairs that fully cancel → net 0 → no tax event (actual dividend is
+  // already in the "Dividends" section). Only emit when net > 0.
+  if (!group.sumGross.gt(0)) return [];
+
+  const ZERO = new Decimal(0);
+  const results: RawTransaction[] = [];
+
+  results.push({
+    id: crypto.randomUUID(),
+    broker: "ibkr",
+    date: group.payDate,
+    type: "DIVIDEND",
+    symbol: group.symbol,
+    tag: "dividend-accrual",
+    currency: group.currency,
+    grossAmount: group.sumGross,
+    commission: ZERO,
+    netAmount: group.sumGross,
+  });
+
+  // Emit matched withholding tax if any was accrued
+  if (group.sumTax.gt(0)) {
+    results.push({
+      id: crypto.randomUUID(),
+      broker: "ibkr",
+      date: group.payDate,
+      type: "WITHHOLDING_TAX",
+      symbol: group.symbol,
+      tag: "dividend-accrual",
+      currency: group.currency,
+      grossAmount: group.sumTax,
+      commission: ZERO,
+      netAmount: group.sumTax,
+    });
+  }
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------

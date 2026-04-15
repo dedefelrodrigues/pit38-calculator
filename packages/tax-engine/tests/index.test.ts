@@ -494,3 +494,117 @@ describe("FIFO runs across year boundary (cross-year lot integrity)", () => {
     expect(result.get(2023)!.equity.totalCostPLN.toNumber()).toBe(6000);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Loss carry-forward scenarios (lossCarryForward: true)
+// ---------------------------------------------------------------------------
+
+describe("lossCarryForward — basic: loss year then gain year", () => {
+  // 2021: buy 10 @ 200 = 2000, sell 10 @ 100 = 1000 → loss -1000
+  // 2022: buy 10 @ 100 = 1000, sell 10 @ 200 = 2000 → raw gain +1000
+  // With carry: max deductible from 2021 loss = 50% of 1000 = 500
+  //   → taxBase 2022 = 1000 - 500 = 500, taxDue = 95
+  const txs: Transaction[] = [
+    makeTx({ type: "BUY",  date: "2021-01-10", symbol: "LCF", quantity: new Decimal(10), grossAmount: new Decimal(2000) }),
+    makeTx({ type: "SELL", date: "2021-12-01", symbol: "LCF", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "BUY",  date: "2022-01-10", symbol: "LCF", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "SELL", date: "2022-12-01", symbol: "LCF", quantity: new Decimal(10), grossAmount: new Decimal(2000) }),
+  ];
+
+  it("without carry-forward: 2021 taxDue=0, 2022 taxBase=1000", () => {
+    const result = calculateTax(txs);
+    expect(result.get(2021)!.equity.taxDue.toNumber()).toBe(0);
+    expect(result.get(2022)!.equity.taxBase.toNumber()).toBe(1000);
+  });
+
+  it("with carry-forward: 2021 taxDue=0, 2022 deducts 500, taxBase=500", () => {
+    const result = calculateTax(txs, { lossCarryForward: true });
+    const eq2021 = result.get(2021)!.equity;
+    const eq2022 = result.get(2022)!.equity;
+    expect(eq2021.taxDue.toNumber()).toBe(0);
+    expect(eq2022.lossCarryForwardDeducted.toNumber()).toBe(500);
+    expect(eq2022.taxBase.toNumber()).toBe(500);
+    expect(eq2022.taxDue.toNumber()).toBeCloseTo(95);
+  });
+});
+
+describe("lossCarryForward — loss fully absorbed over 2 gain years", () => {
+  // 2020: loss -10000
+  // 2021: gain +8000 → deduct min(5000, 8000) = 5000 → taxBase 3000
+  // 2022: gain +8000 → deduct min(5000, 5000 remaining) = 5000 → taxBase 3000
+  const txs: Transaction[] = [
+    makeTx({ type: "BUY",  date: "2020-01-10", symbol: "A", quantity: new Decimal(10), grossAmount: new Decimal(10000) }),
+    makeTx({ type: "SELL", date: "2020-12-01", symbol: "A", quantity: new Decimal(10), grossAmount: new Decimal(0),    netAmount: new Decimal(0) }),
+    makeTx({ type: "BUY",  date: "2021-01-10", symbol: "A", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "SELL", date: "2021-12-01", symbol: "A", quantity: new Decimal(10), grossAmount: new Decimal(9000) }),
+    makeTx({ type: "BUY",  date: "2022-01-10", symbol: "A", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "SELL", date: "2022-12-01", symbol: "A", quantity: new Decimal(10), grossAmount: new Decimal(9000) }),
+  ];
+
+  it("2021: deducts 5000, taxBase = 3000", () => {
+    const result = calculateTax(txs, { lossCarryForward: true });
+    const eq = result.get(2021)!.equity;
+    expect(eq.lossCarryForwardDeducted.toNumber()).toBe(5000);
+    expect(eq.taxBase.toNumber()).toBe(3000);
+  });
+
+  it("2022: deducts remaining 5000, taxBase = 3000", () => {
+    const result = calculateTax(txs, { lossCarryForward: true });
+    const eq = result.get(2022)!.equity;
+    expect(eq.lossCarryForwardDeducted.toNumber()).toBe(5000);
+    expect(eq.taxBase.toNumber()).toBe(3000);
+  });
+});
+
+describe("lossCarryForward — 5-year expiry", () => {
+  // Loss in 2018, gain in 2024 — more than 5 years later, no carry allowed.
+  const txs: Transaction[] = [
+    makeTx({ type: "BUY",  date: "2018-01-10", symbol: "B", quantity: new Decimal(10), grossAmount: new Decimal(5000) }),
+    makeTx({ type: "SELL", date: "2018-12-01", symbol: "B", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "BUY",  date: "2024-01-10", symbol: "B", quantity: new Decimal(10), grossAmount: new Decimal(500) }),
+    makeTx({ type: "SELL", date: "2024-12-01", symbol: "B", quantity: new Decimal(10), grossAmount: new Decimal(2000) }),
+  ];
+
+  it("2024 carry deducted = 0 (loss expired)", () => {
+    const result = calculateTax(txs, { lossCarryForward: true });
+    const eq = result.get(2024)!.equity;
+    expect(eq.lossCarryForwardDeducted.toNumber()).toBe(0);
+    expect(eq.taxBase.toNumber()).toBe(1500); // full gain
+  });
+});
+
+describe("lossCarryForward — multiple prior losses, oldest applied first", () => {
+  // 2021: loss -6000
+  // 2022: loss -4000
+  // 2023: gain +8000
+  //   From 2021: cap = 3000 (50% of 6000), deduct 3000
+  //   From 2022: cap = 2000 (50% of 4000), deduct 2000
+  //   Total deducted = 5000, taxBase = 3000
+  const txs: Transaction[] = [
+    makeTx({ type: "BUY",  date: "2021-01-10", symbol: "C", quantity: new Decimal(10), grossAmount: new Decimal(6000) }),
+    makeTx({ type: "SELL", date: "2021-12-01", symbol: "C", quantity: new Decimal(10), grossAmount: new Decimal(0),    netAmount: new Decimal(0) }),
+    makeTx({ type: "BUY",  date: "2022-01-10", symbol: "C", quantity: new Decimal(10), grossAmount: new Decimal(4000) }),
+    makeTx({ type: "SELL", date: "2022-12-01", symbol: "C", quantity: new Decimal(10), grossAmount: new Decimal(0),    netAmount: new Decimal(0) }),
+    makeTx({ type: "BUY",  date: "2023-01-10", symbol: "C", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "SELL", date: "2023-12-01", symbol: "C", quantity: new Decimal(10), grossAmount: new Decimal(9000) }),
+  ];
+
+  it("2023: deducts 5000 (3000 from 2021 + 2000 from 2022), taxBase = 3000", () => {
+    const result = calculateTax(txs, { lossCarryForward: true });
+    const eq = result.get(2023)!.equity;
+    expect(eq.lossCarryForwardDeducted.toNumber()).toBe(5000);
+    expect(eq.taxBase.toNumber()).toBe(3000);
+  });
+});
+
+describe("lossCarryForward — lossCarryForwardDeducted = 0 by default", () => {
+  const txs: Transaction[] = [
+    makeTx({ type: "BUY",  date: "2023-01-10", symbol: "D", quantity: new Decimal(10), grossAmount: new Decimal(1000) }),
+    makeTx({ type: "SELL", date: "2023-12-01", symbol: "D", quantity: new Decimal(10), grossAmount: new Decimal(2000) }),
+  ];
+
+  it("lossCarryForwardDeducted is always present and = 0 when not used", () => {
+    const eq = calculateTax(txs).get(2023)!.equity;
+    expect(eq.lossCarryForwardDeducted.toNumber()).toBe(0);
+  });
+});

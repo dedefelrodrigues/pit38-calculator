@@ -78,6 +78,16 @@ export interface RawTransaction {
   name?: string;
 
   /**
+   * Source section tag — used by calculateTax to apply fine-grained filters
+   * independent of the main `includeOtherIncome` flag.
+   *   "ibkr-fee"         — IBKR Fees section (market-data / other fees)
+   *   "cyep"             — IBKR CYEP/Broker Fees section
+   *   "interest"         — IBKR Interest section
+   *   "dividend-accrual" — net of Change in Dividend Accruals (Po/Re aggregation)
+   */
+  tag?: "ibkr-fee" | "cyep" | "interest" | "dividend-accrual";
+
+  /**
    * Asset class reported by the broker.
    * Common values: "Stocks", "ETF", "Bonds", "Options", "Funds".
    */
@@ -264,7 +274,14 @@ export interface EquitySummary {
   /** totalRevenuePLN − totalCostPLN (can be negative). */
   totalGainLossPLN: Decimal;
 
-  /** max(0, totalGainLossPLN) */
+  /**
+   * Amount of prior-year losses deducted from this year's gain
+   * under the 5-year carry-forward rule (Art. 9 ust. 3 ustawy o PIT).
+   * Zero when the carry-forward option is disabled or no prior losses apply.
+   */
+  lossCarryForwardDeducted: Decimal;
+
+  /** max(0, totalGainLossPLN − lossCarryForwardDeducted) */
   taxBase: Decimal;
 
   /** taxBase × 0.19 */
