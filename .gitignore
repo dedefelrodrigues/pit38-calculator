@@ -145,3 +145,4 @@ reference/sample-*.csv
 packages/*/dist/
 apps/*/dist/
 
+docker-compose.override.yml
