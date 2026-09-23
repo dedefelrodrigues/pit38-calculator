@@ -1,6 +1,13 @@
 services:
   pit38-calculator:
     build: .
+    container_name: pit38-calculator
     ports:
       - "${PIT38_PORT:-18080}:80"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

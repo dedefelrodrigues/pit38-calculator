@@ -140,8 +140,6 @@ vite.config.ts.timestamp-*
 
 reference/sample-*.csv
 
-# pnpm
-pnpm-lock.yaml
 
 # Build outputs
 packages/*/dist/
