@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import Decimal from "decimal.js";
-import { parseNbpCsv, parseAndMergeNbpCsvs, lookupFxRate, enrichTransaction, detectMissingRates, mergeNbpRates } from "../src/fx.js";
+import { parseNbpCsv, parseAndMergeNbpCsvs, lookupFxRate, enrichTransaction, detectMissingRates, mergeNbpRates, summarizeNbpCoverage } from "../src/fx.js";
 import type { RawTransaction } from "../src/types.js";
 
 // ---------------------------------------------------------------------------
@@ -414,6 +414,62 @@ describe("parseNbpCsv — real yearly files", () => {
     expect(row.get("HUF")!.toFixed(6)).toBe("0.011365");
     // 1USD = 3,9432
     expect(row.get("USD")!.toFixed(4)).toBe("3.9432");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// summarizeNbpCoverage
+// ---------------------------------------------------------------------------
+
+describe("summarizeNbpCoverage", () => {
+  it("marks a full real yearly file as complete", () => {
+    const table = parseNbpCsv(readYearCsv(2024));
+    const coverage = summarizeNbpCoverage(table);
+    expect(coverage).toHaveLength(1);
+    expect(coverage[0]).toMatchObject({ year: 2024, isComplete: true, isCurrentYear: false });
+    expect(coverage[0]!.count).toBeGreaterThanOrEqual(250);
+  });
+
+  it("marks a partial-year table (few days in January) as incomplete", () => {
+    // MINI_CSV only spans 2024-01-02 → 2024-01-08
+    const table = parseNbpCsv(MINI_CSV);
+    const coverage = summarizeNbpCoverage(table);
+    expect(coverage).toHaveLength(1);
+    expect(coverage[0]).toMatchObject({
+      year: 2024,
+      count: 5,
+      firstDate: "2024-01-02",
+      lastDate: "2024-01-08",
+      isComplete: false,
+      isCurrentYear: false,
+    });
+  });
+
+  it("never marks the current year as complete, even with a full-looking range", () => {
+    const year = new Date().getFullYear();
+    const csv = [
+      "data;1USD;nr tabeli;pełny numer tabeli;",
+      ";dolar;;;",
+      `${year}0102;3,9432;1;001/A/NBP/${year};`,
+      `${year}1230;3,9432;250;250/A/NBP/${year};`,
+    ].join("\n");
+    const coverage = summarizeNbpCoverage(parseNbpCsv(csv));
+    expect(coverage[0]).toMatchObject({ year, isComplete: false, isCurrentYear: true });
+  });
+
+  it("reports one entry per year, sorted ascending, after merging multiple files", () => {
+    const table = parseAndMergeNbpCsvs([readYearCsv(2023), readYearCsv(2024)]);
+    const coverage = summarizeNbpCoverage(table);
+    expect(coverage.map((c) => c.year)).toEqual([2023, 2024]);
+    expect(coverage.every((c) => c.isComplete)).toBe(true);
+  });
+
+  it("returns an empty array for an empty table", () => {
+    const table = mergeNbpRates(parseNbpCsv(MINI_CSV), new Map());
+    const empty = { dates: [], rates: new Map() };
+    expect(summarizeNbpCoverage(empty)).toEqual([]);
+    // sanity: non-empty table still works via the same call shape
+    expect(summarizeNbpCoverage(table).length).toBeGreaterThan(0);
   });
 });
 

@@ -8,6 +8,8 @@ import {
 } from "react";
 import {
   parseAndMergeNbpCsvs,
+  parseNbpCsv,
+  mergeNbpRates,
   parseDegiroTrades,
   parseDegiroAccount,
   parseIbkrActivity,
@@ -21,6 +23,12 @@ import {
   type NbpTable,
 } from "@pit38/tax-engine";
 import { mergeDedup } from "@/lib/dedup";
+import {
+  listUploadedNbpFiles,
+  saveUploadedNbpFile,
+  deleteUploadedNbpFile,
+  type StoredNbpFile,
+} from "@/lib/nbpRatesStore";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,12 +52,30 @@ export type UploadSlot =
   | "degiro-account"
   | "ibkr-stocks";
 
+export interface CustomNbpFileInfo {
+  fileName: string;
+  addedAt: string;
+}
+
+export type NbpUploadStatus =
+  | { state: "idle" }
+  | { state: "loading" }
+  | {
+      state: "done";
+      addedFiles: number;
+      failedFiles: { fileName: string; message: string }[];
+    };
+
 interface TransactionCtx {
   transactions: Transaction[];
   nbpTable: NbpTable | null;
   nbpReady: boolean;
   slotState: Record<UploadSlot, UploadSlotState>;
   uploadFile: (slot: UploadSlot, file: File) => Promise<void>;
+  customNbpFiles: CustomNbpFileInfo[];
+  nbpUploadStatus: NbpUploadStatus;
+  uploadNbpRateFiles: (files: File[]) => Promise<void>;
+  removeNbpRateFile: (fileName: string) => Promise<void>;
 }
 
 const TransactionContext = createContext<TransactionCtx | null>(null);
@@ -89,6 +115,31 @@ async function loadBundledNbpRates(): Promise<NbpTable> {
 }
 
 // ---------------------------------------------------------------------------
+// Custom (uploaded) NBP rates — folded on top of the bundled table
+// ---------------------------------------------------------------------------
+
+/** Merges stored custom rate files on top of a base table, skipping any that no longer parse. */
+function applyStoredNbpFiles(base: NbpTable, stored: StoredNbpFile[]): NbpTable {
+  let table = base;
+  for (const file of stored) {
+    try {
+      const parsed = parseNbpCsv(file.text);
+      table = mergeNbpRates(table, parsed.rates);
+    } catch {
+      // A previously-stored file no longer parses (corrupted/edited) — skip it
+      // rather than blocking the whole table from loading.
+    }
+  }
+  return table;
+}
+
+function toCustomFileInfo(stored: StoredNbpFile[]): CustomNbpFileInfo[] {
+  return stored
+    .map(({ fileName, addedAt }) => ({ fileName, addedAt }))
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+// ---------------------------------------------------------------------------
 // Per-slot parser mapping
 // ---------------------------------------------------------------------------
 
@@ -118,23 +169,29 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     "degiro-account": IDLE_SLOT,
     "ibkr-stocks": IDLE_SLOT,
   });
+  const [customNbpFiles, setCustomNbpFiles] = useState<CustomNbpFileInfo[]>([]);
+  const [nbpUploadStatus, setNbpUploadStatus] = useState<NbpUploadStatus>({ state: "idle" });
 
-  // Load bundled NBP rates once on mount; also restore ISIN cache from localStorage.
+  // Load bundled NBP rates once on mount, fold in any previously-uploaded
+  // custom rate files from IndexedDB, and restore the ISIN cache from localStorage.
   useEffect(() => {
     try {
       const stored = localStorage.getItem("pit38_isin_cache");
       if (stored) primeIsinCache(JSON.parse(stored));
     } catch { /* ignore */ }
 
-    loadBundledNbpRates()
-      .then((table) => {
-        setNbpTable(table);
+    (async () => {
+      try {
+        const bundled = await loadBundledNbpRates();
+        const storedFiles = await listUploadedNbpFiles();
+        setNbpTable(applyStoredNbpFiles(bundled, storedFiles));
+        setCustomNbpFiles(toCustomFileInfo(storedFiles));
         setNbpReady(true);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Failed to load NBP rates:", err);
         setNbpReady(false);
-      });
+      }
+    })();
   }, []);
 
   const setSlot = useCallback(
@@ -205,9 +262,62 @@ export function TransactionProvider({ children }: { children: ReactNode }) {
     [nbpTable, setSlot],
   );
 
+  const uploadNbpRateFiles = useCallback(
+    async (files: File[]) => {
+      setNbpUploadStatus({ state: "loading" });
+
+      let table = nbpTable;
+      if (!table) {
+        table = await loadBundledNbpRates();
+      }
+
+      const failedFiles: { fileName: string; message: string }[] = [];
+      let addedFiles = 0;
+
+      for (const file of files) {
+        try {
+          const text = await file.text();
+          const parsed = parseNbpCsv(text); // throws on an unrecognized/corrupt CSV
+          table = mergeNbpRates(table, parsed.rates);
+          await saveUploadedNbpFile(file.name, text);
+          addedFiles += 1;
+        } catch (err) {
+          failedFiles.push({
+            fileName: file.name,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      setNbpTable(table);
+      setNbpReady(true);
+      setCustomNbpFiles(toCustomFileInfo(await listUploadedNbpFiles()));
+      setNbpUploadStatus({ state: "done", addedFiles, failedFiles });
+    },
+    [nbpTable],
+  );
+
+  const removeNbpRateFile = useCallback(async (fileName: string) => {
+    await deleteUploadedNbpFile(fileName);
+    const bundled = await loadBundledNbpRates();
+    const storedFiles = await listUploadedNbpFiles();
+    setNbpTable(applyStoredNbpFiles(bundled, storedFiles));
+    setCustomNbpFiles(toCustomFileInfo(storedFiles));
+  }, []);
+
   return (
     <TransactionContext.Provider
-      value={{ transactions, nbpTable, nbpReady, slotState, uploadFile }}
+      value={{
+        transactions,
+        nbpTable,
+        nbpReady,
+        slotState,
+        uploadFile,
+        customNbpFiles,
+        nbpUploadStatus,
+        uploadNbpRateFiles,
+        removeNbpRateFile,
+      }}
     >
       {children}
     </TransactionContext.Provider>

@@ -33,6 +33,23 @@ export const strings = {
     upload_loadingRates: "Loading NBP rates…",
     upload_fillingGaps: "Fetching missing rates from NBP API…",
 
+    // NBP rates upload card
+    nbpRates_title: "NBP Exchange Rates",
+    nbpRates_hint: "Add yearly rate CSVs (e.g. for years not yet bundled). Stored in this browser only.",
+    nbpRates_chooseFiles: "Choose files",
+    nbpRates_filesAdded: "file(s) added",
+    nbpRates_filesFailed: "failed to parse",
+    nbpRates_uploadedFiles: "Uploaded files",
+    nbpRates_remove: "Remove",
+    nbpRates_coverage: "Rate coverage by year",
+    nbpRates_year: "Year",
+    nbpRates_status: "Status",
+    nbpRates_rateCount: "Rates",
+    nbpRates_range: "Date range",
+    nbpRates_complete: "Complete",
+    nbpRates_partial: "Partial — upload more",
+    nbpRates_inProgress: "In progress",
+
     // Transactions page
     tx_title: "Transactions",
     tx_stocks: "Stocks & ETFs",
@@ -236,6 +253,23 @@ export const strings = {
     upload_error: "Błąd",
     upload_loadingRates: "Ładowanie kursów NBP…",
     upload_fillingGaps: "Pobieranie brakujących kursów z API NBP…",
+
+    // NBP rates upload card
+    nbpRates_title: "Kursy walut NBP",
+    nbpRates_hint: "Dodaj pliki CSV z kursami rocznymi (np. dla lat jeszcze niedołączonych). Zapisywane tylko w tej przeglądarce.",
+    nbpRates_chooseFiles: "Wybierz pliki",
+    nbpRates_filesAdded: "plik(ów) dodanych",
+    nbpRates_filesFailed: "nie udało się wczytać",
+    nbpRates_uploadedFiles: "Wczytane pliki",
+    nbpRates_remove: "Usuń",
+    nbpRates_coverage: "Pokrycie kursów wg roku",
+    nbpRates_year: "Rok",
+    nbpRates_status: "Status",
+    nbpRates_rateCount: "Kursy",
+    nbpRates_range: "Zakres dat",
+    nbpRates_complete: "Kompletny",
+    nbpRates_partial: "Częściowy — wgraj więcej",
+    nbpRates_inProgress: "W trakcie",
 
     // Transactions page
     tx_title: "Transakcje",

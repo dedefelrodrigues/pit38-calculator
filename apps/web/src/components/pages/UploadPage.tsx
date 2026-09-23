@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { UploadSlotButton } from "@/components/upload/UploadSlotButton";
+import { NbpRatesUploadCard } from "@/components/upload/NbpRatesUploadCard";
 import { useI18n } from "@/contexts/I18nContext";
 
 export function UploadPage() {
@@ -44,6 +45,16 @@ export function UploadPage() {
             label={t("upload_ibkrStocks")}
             hint={t("upload_ibkrStocksHint")}
           />
+        </CardContent>
+      </Card>
+
+      {/* NBP exchange rates */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{t("nbpRates_title")}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <NbpRatesUploadCard />
         </CardContent>
       </Card>
     </div>

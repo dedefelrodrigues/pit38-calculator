@@ -311,6 +311,61 @@ export function parseAndMergeNbpCsvs(csvFiles: string[]): NbpTable {
 }
 
 // ---------------------------------------------------------------------------
+// summarizeNbpCoverage — per-year rate coverage for UI display
+// ---------------------------------------------------------------------------
+
+export interface NbpYearCoverage {
+  /** Calendar year, e.g. 2024. */
+  year: number;
+  /** Number of distinct rate-dates present for this year. */
+  count: number;
+  /** Earliest rate-date present for this year ("YYYY-MM-DD"). */
+  firstDate: string;
+  /** Latest rate-date present for this year ("YYYY-MM-DD"). */
+  lastDate: string;
+  /** True if the year's data runs from early January through late December. */
+  isComplete: boolean;
+  /** True if `year` is the current calendar year (never marked complete — it's still in progress). */
+  isCurrentYear: boolean;
+}
+
+/**
+ * Buckets a table's dates by calendar year and reports how much of each year
+ * is covered, so the UI can flag years that still need a rate file uploaded.
+ *
+ * A year counts as complete when its first rate-date falls on or before
+ * Jan 5 and its last falls on or after Dec 28 — a tolerance wide enough to
+ * absorb the New Year holiday gap without requiring an exact day count
+ * (NBP's own publication calendar varies year to year with Polish holidays).
+ * The current year is never marked complete since it's still accumulating.
+ */
+export function summarizeNbpCoverage(table: NbpTable): NbpYearCoverage[] {
+  const byYear = new Map<number, string[]>();
+  for (const date of table.dates) {
+    const year = Number(date.slice(0, 4));
+    let bucket = byYear.get(year);
+    if (!bucket) {
+      bucket = [];
+      byYear.set(year, bucket);
+    }
+    bucket.push(date);
+  }
+
+  const currentYear = new Date().getFullYear();
+  const result: NbpYearCoverage[] = [];
+  for (const [year, dates] of byYear) {
+    const firstDate = dates[0]!;
+    const lastDate = dates[dates.length - 1]!;
+    const isCurrentYear = year === currentYear;
+    const isComplete =
+      !isCurrentYear && firstDate <= `${year}-01-05` && lastDate >= `${year}-12-28`;
+    result.push({ year, count: dates.length, firstDate, lastDate, isComplete, isCurrentYear });
+  }
+
+  return result.sort((a, b) => a.year - b.year);
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
