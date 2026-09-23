@@ -2,5 +2,5 @@ services:
   pit38-calculator:
     build: .
     ports:
-      - "8080:80"
+      - "${PIT38_PORT:-18080}:80"
     restart: unless-stopped
